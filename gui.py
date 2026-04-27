@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -38,6 +38,7 @@ class ProxyApp(tk.Tk):
         self.base_url_var = tk.StringVar()
         self.api_key_var = tk.StringVar()
         self.upstream_model_var = tk.StringVar()
+        self.api_format_var = tk.StringVar(value="responses")
         self.status_var = tk.StringVar(value="Stopped")
 
         self.create_widgets()
@@ -107,13 +108,20 @@ class ProxyApp(tk.Tk):
             ttk.Label(edit_frame, text=label).grid(row=row, column=0, padx=8, pady=7, sticky="w")
             show = "*" if label == "API Key" else None
             ttk.Entry(edit_frame, textvariable=variable, show=show).grid(row=row, column=1, padx=8, pady=7, sticky="ew")
+        ttk.Label(edit_frame, text="API Format").grid(row=5, column=0, padx=8, pady=7, sticky="w")
+        ttk.Combobox(
+            edit_frame,
+            textvariable=self.api_format_var,
+            values=("responses", "chat_completions"),
+            state="readonly",
+        ).grid(row=5, column=1, padx=8, pady=7, sticky="ew")
 
         hint = (
             "Claude Code uses Model ID. The proxy sends Upstream Model to your Responses endpoint.\n"
             "Example: Model ID = gpt-5.5-code, Upstream Model = GPT-5.5"
         )
-        ttk.Label(edit_frame, text=hint, foreground="#555").grid(row=5, column=0, columnspan=2, padx=8, pady=8, sticky="w")
-        ttk.Button(edit_frame, text="Apply Model Changes", command=self.apply_model).grid(row=6, column=1, padx=8, pady=8, sticky="e")
+        ttk.Label(edit_frame, text=hint, foreground="#555").grid(row=6, column=0, columnspan=2, padx=8, pady=8, sticky="w")
+        ttk.Button(edit_frame, text="Apply Model Changes", command=self.apply_model).grid(row=7, column=1, padx=8, pady=8, sticky="e")
 
         bottom = ttk.Frame(root)
         bottom.pack(fill=tk.X)
@@ -152,6 +160,7 @@ class ProxyApp(tk.Tk):
         self.base_url_var.set(model.base_url)
         self.api_key_var.set(model.api_key)
         self.upstream_model_var.set(model.upstream_model)
+        self.api_format_var.set(getattr(model, "api_format", "responses") or "responses")
 
     def new_model(self) -> None:
         model = ModelConfig(
@@ -160,6 +169,7 @@ class ProxyApp(tk.Tk):
             base_url="https://genaiapi.shanghaitech.edu.cn/api/v1/response",
             api_key="",
             upstream_model="GPT-5.5",
+            api_format="responses",
         )
         self.config_data.models.append(model)
         self.refresh_model_list()
@@ -186,6 +196,7 @@ class ProxyApp(tk.Tk):
             base_url=self.base_url_var.get().strip(),
             api_key=self.api_key_var.get().strip(),
             upstream_model=self.upstream_model_var.get().strip() or self.model_id_var.get().strip(),
+            api_format=self.api_format_var.get().strip() or "responses",
         )
         if not model.model_id or not model.base_url:
             messagebox.showerror("Missing value", "Model ID and Base URL are required.")

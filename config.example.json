@@ -9,7 +9,16 @@
                        "model_id":  "GPT-5.5",
                        "base_url":  "https://genaiapi.shanghaitech.edu.cn/api/v1/response",
                        "api_key":  "",
-                       "upstream_model":  "GPT-5.5"
+                       "upstream_model":  "GPT-5.5",
+                       "api_format":  "responses"
+                   },
+                   {
+                       "name":  "ShanghaiTech DeepSeek Pro Chat Completions",
+                       "model_id":  "deepseek-pro",
+                       "base_url":  "https://genaiapi.shanghaitech.edu.cn/api/v1/start/chat/completions",
+                       "api_key":  "",
+                       "upstream_model":  "deepseek-pro",
+                       "api_format":  "chat_completions"
                    }
                ],
     "claude_path":  "%APPDATA%\\npm\\claude.cmd",

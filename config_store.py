@@ -66,6 +66,7 @@ class ModelConfig:
     base_url: str
     api_key: str
     upstream_model: str
+    api_format: str
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
@@ -76,6 +77,7 @@ class ModelConfig:
             base_url=str(data.get("base_url") or DEFAULT_UPSTREAM_URL).strip(),
             api_key=str(data.get("api_key") or "").strip(),
             upstream_model=str(data.get("upstream_model") or model_id).strip(),
+            api_format=str(data.get("api_format") or "responses").strip(),
         )
 
     def to_dict(self) -> Dict[str, str]:
@@ -85,6 +87,7 @@ class ModelConfig:
             "base_url": self.base_url,
             "api_key": self.api_key,
             "upstream_model": self.upstream_model,
+            "api_format": self.api_format,
         }
 
 
@@ -114,6 +117,7 @@ class AppConfig:
                     base_url=DEFAULT_UPSTREAM_URL,
                     api_key="",
                     upstream_model=DEFAULT_MODEL_ID,
+                    api_format="responses",
                 )
             ],
         )

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Minimal Anthropic Messages -> OpenAI Responses streaming proxy for Claude Code.
 
@@ -204,6 +204,57 @@ def anthropic_messages_to_responses(body: Dict[str, Any], fallback_model: str, u
     return payload
 
 
+def anthropic_messages_to_chat_completions(body: Dict[str, Any], fallback_model: str, upstream_model: Optional[str] = None) -> Dict[str, Any]:
+    messages: List[Dict[str, str]] = []
+
+    system = body.get("system")
+    if isinstance(system, str) and system.strip():
+        messages.append({"role": "system", "content": system})
+    elif isinstance(system, list):
+        system_text = anthropic_content_to_text(system)
+        if system_text:
+            messages.append({"role": "system", "content": system_text})
+
+    for message in body.get("messages", []):
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role", "user")
+        if role not in ("user", "assistant", "system"):
+            role = "user"
+        messages.append({"role": role, "content": anthropic_content_to_text(message.get("content", ""))})
+
+    payload: Dict[str, Any] = {
+        "model": upstream_model or os.getenv("UPSTREAM_MODEL") or body.get("model") or fallback_model,
+        "messages": messages,
+        "stream": bool(body.get("stream", True)),
+    }
+    if isinstance(body.get("max_tokens"), int):
+        payload["max_tokens"] = body["max_tokens"]
+    if isinstance(body.get("temperature"), (int, float)):
+        payload["temperature"] = body["temperature"]
+    if isinstance(body.get("top_p"), (int, float)):
+        payload["top_p"] = body["top_p"]
+
+    tools = body.get("tools")
+    if tools:
+        tool_note = (
+            "Available Claude Code tools were provided, but this proxy only supports text streaming for "
+            "chat_completions mode. Tool schemas are included as context only.\n"
+            + json.dumps(tools, ensure_ascii=False)
+        )
+        if messages and messages[0]["role"] == "system":
+            messages[0]["content"] += "\n\n" + tool_note
+        else:
+            messages.insert(0, {"role": "system", "content": tool_note})
+    return payload
+
+
+def anthropic_messages_to_upstream(body: Dict[str, Any], model_config: ModelConfig, fallback_model: str, upstream_model: Optional[str]) -> Dict[str, Any]:
+    if model_config.api_format == "chat_completions":
+        return anthropic_messages_to_chat_completions(body, fallback_model, upstream_model)
+    return anthropic_messages_to_responses(body, fallback_model, upstream_model)
+
+
 def open_upstream(payload: Dict[str, Any], auth_token: str, upstream_url: str, timeout: int) -> urllib.response.addinfourl:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {
@@ -253,7 +304,19 @@ def extract_text_delta(event: Optional[str], data: str) -> Tuple[str, Optional[D
         return "text_done", {"text": obj.get("text", "")}
     if event_type == "response.completed":
         return "done", obj
-    if event_type in ("error", "response.failed"):
+
+    choices = obj.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else {}
+        message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+        text = delta.get("content") or message.get("content") or ""
+        if text:
+            return "delta", {"text": text}
+        if choice.get("finish_reason"):
+            return "done", obj
+
+    if event_type in ("error", "response.failed") or obj.get("error"):
         return "error", obj
     return "ignore", obj
 
@@ -313,11 +376,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 send_json(self, 500, {"type": "error", "error": {"type": "authentication_error", "message": f"No API key configured for model {model_config.model_id}"}})
                 return
 
-            upstream_payload = anthropic_messages_to_responses(body, fallback_model, upstream_model)
+            upstream_payload = anthropic_messages_to_upstream(body, model_config, fallback_model, upstream_model)
             log(
                 "request "
                 f"model={body.get('model')} route={model_config.model_id} "
                 f"upstream_model={upstream_payload.get('model')} "
+                f"format={model_config.api_format} "
                 f"messages={len(body.get('messages', []))} stream={stream}"
             )
             if stream:
