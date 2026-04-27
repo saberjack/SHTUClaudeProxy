@@ -13,6 +13,13 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8082
 DEFAULT_UPSTREAM_URL = "https://genaiapi.shanghaitech.edu.cn/api/v1/response"
 DEFAULT_MODEL_ID = "GPT-5.5"
+MODEL_ENV_KEYS = (
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_REASONING_MODEL",
+)
 
 
 def default_claude_settings_path() -> str:
@@ -96,6 +103,7 @@ class AppConfig:
     host: str
     port: int
     default_model_id: str
+    model_env: Dict[str, str]
     timeout: int
     claude_path: str
     claude_settings_path: str
@@ -107,6 +115,7 @@ class AppConfig:
             host=DEFAULT_HOST,
             port=DEFAULT_PORT,
             default_model_id=DEFAULT_MODEL_ID,
+            model_env={key: DEFAULT_MODEL_ID for key in MODEL_ENV_KEYS},
             timeout=300,
             claude_path=default_claude_path(),
             claude_settings_path=default_claude_settings_path(),
@@ -126,10 +135,17 @@ class AppConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "AppConfig":
         default = cls.default()
         models = [ModelConfig.from_dict(item) for item in data.get("models", []) if isinstance(item, dict)]
+        default_model_id = str(data.get("default_model_id") or (models[0].model_id if models else default.default_model_id)).strip()
+        raw_model_env = data.get("model_env") if isinstance(data.get("model_env"), dict) else {}
+        model_env = {
+            key: str(raw_model_env.get(key) or default_model_id).strip()
+            for key in MODEL_ENV_KEYS
+        }
         return cls(
             host=str(data.get("host") or default.host).strip(),
             port=int(data.get("port") or default.port),
-            default_model_id=str(data.get("default_model_id") or (models[0].model_id if models else default.default_model_id)).strip(),
+            default_model_id=default_model_id,
+            model_env=model_env,
             timeout=int(data.get("timeout") or default.timeout),
             claude_path=portable_claude_path(str(data.get("claude_path") or default.claude_path)),
             claude_settings_path=portable_settings_path(str(data.get("claude_settings_path") or default.claude_settings_path)),
@@ -141,6 +157,7 @@ class AppConfig:
             "host": self.host,
             "port": self.port,
             "default_model_id": self.default_model_id,
+            "model_env": self.model_env,
             "timeout": self.timeout,
             "claude_path": self.claude_path,
             "claude_settings_path": self.claude_settings_path,

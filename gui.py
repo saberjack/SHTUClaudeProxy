@@ -12,15 +12,15 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 import proxy
-from config_store import AppConfig, ModelConfig, config_path, default_claude_path, default_claude_settings_path, load_config, portable_claude_path, portable_settings_path, save_config
+from config_store import AppConfig, MODEL_ENV_KEYS, ModelConfig, config_path, default_claude_path, default_claude_settings_path, load_config, portable_claude_path, portable_settings_path, save_config
 
 
 class ProxyApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("SHTUClaudeProxy")
-        self.geometry("940x640")
-        self.minsize(860, 560)
+        self.title("SHTUClaudeProxy - Guided Setup")
+        self.geometry("1280x900")
+        self.minsize(1040, 680)
         self.config_data = load_config()
         self.server: Optional[ThreadingHTTPServer] = None
         self.server_thread: Optional[threading.Thread] = None
@@ -32,6 +32,13 @@ class ProxyApp(tk.Tk):
         self.timeout_var = tk.StringVar(value=str(self.config_data.timeout))
         self.claude_path_var = tk.StringVar(value=self.config_data.claude_path)
         self.claude_settings_path_var = tk.StringVar(value=self.config_data.claude_settings_path)
+        self.model_env_vars = {
+            key: tk.StringVar(value=self.config_data.model_env.get(key) or self.config_data.default_model_id)
+            for key in MODEL_ENV_KEYS
+        }
+        self.model_env_combos: list[ttk.Combobox] = []
+        self.route_summary_var = tk.StringVar()
+        self.scroll_canvas: Optional[tk.Canvas] = None
 
         self.name_var = tk.StringVar()
         self.model_id_var = tk.StringVar()
@@ -41,13 +48,93 @@ class ProxyApp(tk.Tk):
         self.api_format_var = tk.StringVar(value="responses")
         self.status_var = tk.StringVar(value="Stopped")
 
+        self.configure_styles()
         self.create_widgets()
         self.refresh_model_list()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+    def configure_styles(self) -> None:
+        style = ttk.Style(self)
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), foreground="#0b3d91")
+        style.configure("Success.TButton", font=("Segoe UI", 10, "bold"), foreground="#0f6b2f")
+        style.configure("Warning.TButton", font=("Segoe UI", 10, "bold"), foreground="#9a4d00")
+        style.configure("StepTitle.TLabel", font=("Segoe UI", 10, "bold"))
+        style.configure("Hint.TLabel", foreground="#555555")
+        style.configure("Status.TLabel", font=("Segoe UI", 10, "bold"), foreground="#0f6b2f")
+
     def create_widgets(self) -> None:
-        root = ttk.Frame(self, padding=12)
-        root.pack(fill=tk.BOTH, expand=True)
+        outer = ttk.Frame(self)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        self.scroll_canvas = canvas
+        scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        root = ttk.Frame(canvas, padding=12)
+        root_window = canvas.create_window((0, 0), window=root, anchor="nw")
+
+        def update_scroll_region(_event: object) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def update_root_width(event: tk.Event) -> None:
+            canvas.itemconfigure(root_window, width=event.width)
+
+        def on_mousewheel(event: tk.Event) -> None:
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        root.bind("<Configure>", update_scroll_region)
+        canvas.bind("<Configure>", update_root_width)
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+        intro_frame = ttk.LabelFrame(root, text="Recommended Order")
+        intro_frame.pack(fill=tk.X, pady=(0, 10))
+        intro_frame.columnconfigure(0, weight=1)
+        ttk.Label(
+            intro_frame,
+            text="Follow 1 → 2 → 3 for first-time setup. After that, usually only Step 3 is needed.（首次按 1→2→3，之后通常只按第 3 步）",
+            style="StepTitle.TLabel",
+        ).grid(row=0, column=0, padx=10, pady=(8, 2), sticky="w")
+        ttk.Label(
+            intro_frame,
+            text="Advanced buttons are optional. You can ignore them for normal daily use.（高级按钮日常可忽略）",
+            style="Hint.TLabel",
+        ).grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
+
+        actions = ttk.LabelFrame(root, text="Quick Start")
+        actions.pack(fill=tk.X, pady=(0, 10))
+        for column in range(3):
+            actions.columnconfigure(column, weight=1)
+
+        self.create_step_card(
+            actions,
+            0,
+            "1. Save",
+            "Save Config",
+            "Save model, routing, key, URL, and server settings.",
+            self.save,
+            "Primary.TButton",
+        )
+        self.create_step_card(
+            actions,
+            1,
+            "2. Connect Claude",
+            "Write Claude Settings",
+            "One-time setup: write selected model routing to Claude Code.",
+            self.write_claude_settings,
+            "Warning.TButton",
+        )
+        self.create_step_card(
+            actions,
+            2,
+            "3. Run",
+            "Start Proxy + Launch Claude",
+            "Daily use: start proxy, then open Claude Code.",
+            self.launch_claude_code,
+            "Success.TButton",
+        )
 
         server_frame = ttk.LabelFrame(root, text="Server")
         server_frame.pack(fill=tk.X)
@@ -58,8 +145,8 @@ class ProxyApp(tk.Tk):
         ttk.Entry(server_frame, textvariable=self.host_var, width=16).grid(row=0, column=1, padx=6, pady=8, sticky="ew")
         ttk.Label(server_frame, text="Port").grid(row=0, column=2, padx=6, pady=8, sticky="w")
         ttk.Entry(server_frame, textvariable=self.port_var, width=8).grid(row=0, column=3, padx=6, pady=8, sticky="ew")
-        ttk.Label(server_frame, text="Default Model ID").grid(row=0, column=4, padx=6, pady=8, sticky="w")
-        ttk.Entry(server_frame, textvariable=self.default_model_var, width=18).grid(row=0, column=5, padx=6, pady=8, sticky="ew")
+        ttk.Label(server_frame, text="Current Main Model").grid(row=0, column=4, padx=6, pady=8, sticky="w")
+        ttk.Entry(server_frame, textvariable=self.default_model_var, width=18, state="readonly").grid(row=0, column=5, padx=6, pady=8, sticky="ew")
         ttk.Label(server_frame, text="Timeout").grid(row=0, column=6, padx=6, pady=8, sticky="w")
         ttk.Entry(server_frame, textvariable=self.timeout_var, width=8).grid(row=0, column=7, padx=6, pady=8, sticky="ew")
         ttk.Label(server_frame, text="Claude Code Path").grid(row=1, column=0, padx=6, pady=8, sticky="w")
@@ -69,8 +156,35 @@ class ProxyApp(tk.Tk):
         ttk.Entry(server_frame, textvariable=self.claude_settings_path_var).grid(row=2, column=1, columnspan=6, padx=6, pady=8, sticky="ew")
         ttk.Button(server_frame, text="Browse", command=self.browse_claude_settings_path).grid(row=2, column=7, padx=6, pady=8, sticky="ew")
 
+        env_frame = ttk.LabelFrame(root, text="Claude Model Routing")
+        env_frame.pack(fill=tk.X, pady=(6, 0))
+        for column in range(5):
+            env_frame.columnconfigure(column, weight=1)
+        ttk.Label(
+            env_frame,
+            text="Choose model routing. Defaults can all be the same.",
+            style="Hint.TLabel",
+        ).grid(row=0, column=0, columnspan=5, padx=8, pady=(6, 2), sticky="w")
+        model_routes = [
+            ("Main Model", "ANTHROPIC_MODEL"),
+            ("Haiku Model", "ANTHROPIC_DEFAULT_HAIKU_MODEL"),
+            ("Sonnet Model", "ANTHROPIC_DEFAULT_SONNET_MODEL"),
+            ("Opus Model", "ANTHROPIC_DEFAULT_OPUS_MODEL"),
+            ("Reasoning Model", "ANTHROPIC_REASONING_MODEL"),
+        ]
+        for index, (label, key) in enumerate(model_routes):
+            route_cell = ttk.Frame(env_frame)
+            route_cell.grid(row=1, column=index, padx=5, pady=4, sticky="ew")
+            route_cell.columnconfigure(0, weight=1)
+            ttk.Label(route_cell, text=label).grid(row=0, column=0, sticky="w")
+            combo = ttk.Combobox(route_cell, textvariable=self.model_env_vars[key], state="readonly", width=18)
+            combo.grid(row=1, column=0, sticky="ew")
+            combo.bind("<<ComboboxSelected>>", self.on_model_route_changed)
+            self.model_env_combos.append(combo)
+        ttk.Label(env_frame, textvariable=self.route_summary_var, style="StepTitle.TLabel").grid(row=2, column=0, columnspan=5, padx=8, pady=(2, 6), sticky="w")
+
         body = ttk.Frame(root)
-        body.pack(fill=tk.BOTH, expand=True, pady=10)
+        body.pack(fill=tk.BOTH, expand=True, pady=(8, 6))
         body.columnconfigure(0, weight=1)
         body.columnconfigure(1, weight=2)
         body.rowconfigure(0, weight=1)
@@ -89,7 +203,7 @@ class ProxyApp(tk.Tk):
         self.model_tree.bind("<<TreeviewSelect>>", self.on_select_model)
 
         list_buttons = ttk.Frame(list_frame)
-        list_buttons.grid(row=1, column=0, sticky="ew", pady=8)
+        list_buttons.grid(row=1, column=0, sticky="ew", pady=4)
         ttk.Button(list_buttons, text="New", command=self.new_model).pack(side=tk.LEFT, padx=4)
         ttk.Button(list_buttons, text="Delete", command=self.delete_model).pack(side=tk.LEFT, padx=4)
 
@@ -105,47 +219,112 @@ class ProxyApp(tk.Tk):
             ("Upstream Model", self.upstream_model_var),
         ]
         for row, (label, variable) in enumerate(fields):
-            ttk.Label(edit_frame, text=label).grid(row=row, column=0, padx=8, pady=7, sticky="w")
+            ttk.Label(edit_frame, text=label).grid(row=row, column=0, padx=8, pady=4, sticky="w")
             show = "*" if label == "API Key" else None
-            ttk.Entry(edit_frame, textvariable=variable, show=show).grid(row=row, column=1, padx=8, pady=7, sticky="ew")
-        ttk.Label(edit_frame, text="API Format").grid(row=5, column=0, padx=8, pady=7, sticky="w")
+            ttk.Entry(edit_frame, textvariable=variable, show=show).grid(row=row, column=1, padx=8, pady=4, sticky="ew")
+        ttk.Label(edit_frame, text="API Format").grid(row=5, column=0, padx=8, pady=4, sticky="w")
         ttk.Combobox(
             edit_frame,
             textvariable=self.api_format_var,
             values=("responses", "chat_completions"),
             state="readonly",
-        ).grid(row=5, column=1, padx=8, pady=7, sticky="ew")
+        ).grid(row=5, column=1, padx=8, pady=4, sticky="ew")
 
         hint = (
-            "Claude Code uses Model ID. The proxy sends Upstream Model to your Responses endpoint.\n"
-            "Example: Model ID = gpt-5.5-code, Upstream Model = GPT-5.5"
+            "Step 1: Fill API Key, Base URL, API Format, and Upstream Model.\n"
+            "Claude Code sees Model ID; the upstream service receives Upstream Model."
         )
-        ttk.Label(edit_frame, text=hint, foreground="#555").grid(row=6, column=0, columnspan=2, padx=8, pady=8, sticky="w")
-        ttk.Button(edit_frame, text="Apply Model Changes", command=self.apply_model).grid(row=7, column=1, padx=8, pady=8, sticky="e")
+        ttk.Label(edit_frame, text=hint, style="Hint.TLabel").grid(row=6, column=0, columnspan=2, padx=8, pady=4, sticky="w")
+        ttk.Button(edit_frame, text="Apply Model Changes", command=self.apply_model).grid(row=7, column=1, padx=8, pady=4, sticky="e")
 
-        bottom = ttk.Frame(root)
-        bottom.pack(fill=tk.X)
-        ttk.Label(bottom, textvariable=self.status_var).pack(side=tk.LEFT)
-        ttk.Button(bottom, text="Save Config", command=self.save).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(bottom, text="Start Proxy", command=self.start_proxy).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(bottom, text="Stop Proxy", command=self.stop_proxy).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(bottom, text="Launch Claude Code", command=self.launch_claude_code).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(bottom, text="Write Claude Settings", command=self.write_claude_settings).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(bottom, text="Install Launch Script", command=self.install_launch_script).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(bottom, text="Copy Claude Config", command=self.copy_claude_config).pack(side=tk.RIGHT, padx=4)
+        status_frame = ttk.Frame(root)
+        status_frame.pack(fill=tk.X, pady=(8, 0))
+        ttk.Label(status_frame, text="Status:", style="StepTitle.TLabel").pack(side=tk.LEFT)
+        ttk.Label(status_frame, textvariable=self.status_var, style="Status.TLabel").pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(status_frame, text="Stop Proxy", command=self.stop_proxy).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(status_frame, text="Start Proxy Only", command=self.start_proxy).pack(side=tk.RIGHT, padx=4)
+
+        advanced = ttk.LabelFrame(root, text="Advanced / Optional")
+        advanced.pack(fill=tk.X, pady=(6, 0))
+        ttk.Label(
+            advanced,
+            text="Optional: install a manual PowerShell launcher or copy env vars. Most users do not need these.",
+            style="Hint.TLabel",
+        ).pack(side=tk.LEFT, padx=8, pady=8)
+        ttk.Button(advanced, text="Install Launch Script", command=self.install_launch_script).pack(side=tk.RIGHT, padx=4, pady=8)
+        ttk.Button(advanced, text="Copy Claude Config", command=self.copy_claude_config).pack(side=tk.RIGHT, padx=4, pady=8)
 
         log_frame = ttk.LabelFrame(root, text="Logs")
         log_frame.pack(fill=tk.BOTH, expand=False, pady=(10, 0))
-        self.log_text = tk.Text(log_frame, height=9, wrap=tk.WORD)
+        self.log_text = tk.Text(log_frame, height=5, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
+
+    def create_step_card(
+        self,
+        parent: ttk.Frame,
+        column: int,
+        title: str,
+        button_text: str,
+        description: str,
+        command: object,
+        button_style: str,
+    ) -> None:
+        card = ttk.Frame(parent, padding=6)
+        card.grid(row=0, column=column, sticky="nsew", padx=6, pady=6)
+        card.columnconfigure(0, weight=1)
+        card.rowconfigure(1, weight=1, minsize=36)
+        ttk.Label(card, text=title, style="StepTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(card, text=description, style="Hint.TLabel", wraplength=280).grid(row=1, column=0, sticky="new", pady=(2, 6))
+        ttk.Button(card, text=button_text, command=command, style=button_style).grid(row=2, column=0, sticky="sew")
 
     def refresh_model_list(self) -> None:
         self.model_tree.delete(*self.model_tree.get_children())
         for index, model in enumerate(self.config_data.models):
             self.model_tree.insert("", tk.END, iid=str(index), values=(model.model_id, model.upstream_model))
+        self.refresh_model_env_choices()
         if self.config_data.models:
             self.model_tree.selection_set("0")
             self.load_model(0)
+
+    def refresh_model_env_choices(self) -> None:
+        model_ids = [model.model_id for model in self.config_data.models]
+        if not model_ids:
+            return
+        for key, variable in self.model_env_vars.items():
+            if variable.get() not in model_ids:
+                variable.set(self.config_data.default_model_id if self.config_data.default_model_id in model_ids else model_ids[0])
+        self.default_model_var.set(self.model_env_vars["ANTHROPIC_MODEL"].get())
+        for combo in self.model_env_combos:
+            combo.configure(values=model_ids)
+        self.update_model_route_summary()
+
+    def on_model_route_changed(self, _event: object) -> None:
+        self.default_model_var.set(self.model_env_vars["ANTHROPIC_MODEL"].get())
+        self.update_model_route_summary()
+
+    def update_model_route_summary(self) -> None:
+        labels = (
+            ("Main", "ANTHROPIC_MODEL"),
+            ("Haiku", "ANTHROPIC_DEFAULT_HAIKU_MODEL"),
+            ("Sonnet", "ANTHROPIC_DEFAULT_SONNET_MODEL"),
+            ("Opus", "ANTHROPIC_DEFAULT_OPUS_MODEL"),
+            ("Reasoning", "ANTHROPIC_REASONING_MODEL"),
+        )
+        summary = "Effective: " + " | ".join(f"{label}={self.model_env_vars[key].get()}" for label, key in labels)
+        self.route_summary_var.set(summary)
+
+    def selected_model_env(self) -> dict[str, str]:
+        model_ids = [model.model_id for model in self.config_data.models]
+        fallback = self.config_data.default_model_id if self.config_data.default_model_id in model_ids else model_ids[0]
+        selected = {}
+        for key, variable in self.model_env_vars.items():
+            value = variable.get().strip()
+            selected[key] = value if value in model_ids else fallback
+            variable.set(selected[key])
+        selected["ANTHROPIC_MODEL"] = self.model_env_vars["ANTHROPIC_MODEL"].get().strip() or fallback
+        self.default_model_var.set(selected["ANTHROPIC_MODEL"])
+        self.update_model_route_summary()
+        return selected
 
     def on_select_model(self, _event: object) -> None:
         selection = self.model_tree.selection()
@@ -190,6 +369,7 @@ class ProxyApp(tk.Tk):
     def apply_model(self) -> None:
         if self.selected_index is None:
             return
+        old_model_id = self.config_data.models[self.selected_index].model_id
         model = ModelConfig(
             name=self.name_var.get().strip() or self.model_id_var.get().strip(),
             model_id=self.model_id_var.get().strip(),
@@ -201,6 +381,10 @@ class ProxyApp(tk.Tk):
         if not model.model_id or not model.base_url:
             messagebox.showerror("Missing value", "Model ID and Base URL are required.")
             return
+        if old_model_id != model.model_id:
+            for variable in self.model_env_vars.values():
+                if variable.get() == old_model_id:
+                    variable.set(model.model_id)
         self.config_data.models[self.selected_index] = model
         self.refresh_model_list()
         self.model_tree.selection_set(str(self.selected_index))
@@ -238,7 +422,8 @@ class ProxyApp(tk.Tk):
             return False
         self.config_data.host = self.host_var.get().strip() or "127.0.0.1"
         self.config_data.port = port
-        self.config_data.default_model_id = self.default_model_var.get().strip() or self.config_data.models[0].model_id
+        self.config_data.model_env = self.selected_model_env()
+        self.config_data.default_model_id = self.config_data.model_env["ANTHROPIC_MODEL"]
         self.config_data.timeout = timeout
         self.config_data.claude_path = portable_claude_path(self.claude_path_var.get().strip() or default_claude_path())
         self.config_data.claude_settings_path = portable_settings_path(self.claude_settings_path_var.get().strip() or default_claude_settings_path())
@@ -284,20 +469,10 @@ class ProxyApp(tk.Tk):
             self.append_log("Stopped proxy")
 
     def copy_claude_config(self) -> None:
-        if not self.sync_server_fields():
+        env = self.claude_env()
+        if not env:
             return
-        model_id = self.default_model_var.get().strip() or self.config_data.models[0].model_id
-        value = f'''{{
-  "env": {{
-    "ANTHROPIC_BASE_URL": "http://{self.config_data.host}:{self.config_data.port}",
-    "ANTHROPIC_MODEL": "{model_id}",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "{model_id}",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "{model_id}",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "{model_id}",
-    "ANTHROPIC_AUTH_TOKEN": "local-proxy"
-  }},
-  "includeCoAuthoredBy": false
-}}'''
+        value = json.dumps({"env": env, "includeCoAuthoredBy": False}, ensure_ascii=False, indent=2)
         self.clipboard_clear()
         self.clipboard_append(value)
         self.append_log("Copied Claude Code config to clipboard")
@@ -305,16 +480,12 @@ class ProxyApp(tk.Tk):
     def claude_env(self) -> dict[str, str]:
         if not self.sync_server_fields():
             return {}
-        model_id = self.default_model_var.get().strip() or self.config_data.models[0].model_id
-        return {
+        env = {
             "ANTHROPIC_BASE_URL": f"http://{self.config_data.host}:{self.config_data.port}",
-            "ANTHROPIC_MODEL": model_id,
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL": model_id,
-            "ANTHROPIC_DEFAULT_SONNET_MODEL": model_id,
-            "ANTHROPIC_DEFAULT_OPUS_MODEL": model_id,
-            "ANTHROPIC_REASONING_MODEL": model_id,
             "ANTHROPIC_AUTH_TOKEN": "local-proxy",
         }
+        env.update(self.config_data.model_env)
+        return env
 
 
     def claude_settings_payload(self) -> dict[str, object]:
@@ -407,6 +578,8 @@ class ProxyApp(tk.Tk):
         self.log_text.see(tk.END)
 
     def on_close(self) -> None:
+        if self.scroll_canvas is not None:
+            self.scroll_canvas.unbind_all("<MouseWheel>")
         self.stop_proxy()
         self.destroy()
 

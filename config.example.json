@@ -2,6 +2,13 @@
     "host":  "127.0.0.1",
     "port":  8082,
     "default_model_id":  "GPT-5.5",
+    "model_env":  {
+                      "ANTHROPIC_MODEL":  "GPT-5.5",
+                      "ANTHROPIC_DEFAULT_HAIKU_MODEL":  "GPT-5.5",
+                      "ANTHROPIC_DEFAULT_SONNET_MODEL":  "GPT-5.5",
+                      "ANTHROPIC_DEFAULT_OPUS_MODEL":  "GPT-5.5",
+                      "ANTHROPIC_REASONING_MODEL":  "GPT-5.5"
+                  },
     "timeout":  300,
     "models":  [
                    {

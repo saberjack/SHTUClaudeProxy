@@ -1,5 +1,7 @@
 ﻿# SHTUClaudeProxy
 
+Current stable version: **v1.5.0**
+
 SHTUClaudeProxy is a Windows desktop proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
 This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It helps users access Claude Code through the university GenAI Response API by translating Claude Code's Anthropic Messages API traffic into an OpenAI Responses-style upstream request and converting streaming responses back into Claude Code-compatible Server-Sent Events.
@@ -35,15 +37,20 @@ Claude Code
 ## Features
 
 - Windows GUI; no command-line environment setup required.
+- Guided quick-start GUI with visible `Save -> Connect Claude -> Run` workflow.
+- Full-window scrolling for smaller displays.
 - Local Anthropic-compatible endpoint for Claude Code.
 - Multiple model configurations.
+- Per-Claude-role model routing for `ANTHROPIC_MODEL`, Haiku, Sonnet, Opus, and reasoning model variables.
 - Per-model settings:
   - display name
   - Claude Code model ID
   - GenAI Response API base URL
   - API key
   - upstream model ID
+  - upstream API format (`responses` or `chat_completions`)
 - One-click writing of Claude Code `settings.json`.
+- One-click Claude Code launch with proxy environment.
 - Auto-detection of npm-installed Claude Code.
 - Portable across Windows user accounts and machines.
 - PyInstaller build script for Windows release packaging.
@@ -172,7 +179,7 @@ The app updates your Claude Code settings file, usually:
 %USERPROFILE%\.claude\settings.json
 ```
 
-It writes an `env` block like:
+Use `Claude Model Routing` to choose which configured Model ID is written to each Claude Code model variable. They may all point to the same model, or each role can point to a different configured model. It writes an `env` block like:
 
 ```json
 {
@@ -188,6 +195,8 @@ It writes an `env` block like:
   "includeCoAuthoredBy": false
 }
 ```
+
+`Current Main Model` shows the value used for `ANTHROPIC_MODEL`. To change it, select a different `Main Model` in `Claude Model Routing`.
 
 `ANTHROPIC_AUTH_TOKEN` is only a local placeholder for Claude Code. The real upstream API key is stored in SHTUClaudeProxy's local app config and is used only by the proxy when forwarding requests to GenAI Response API.
 
@@ -322,6 +331,22 @@ dist\SHTUClaudeProxy
 ```
 
 Do not distribute only the `.exe` file, because the `_internal` runtime folder is required.
+The release zip is generated at:
+
+```text
+release\SHTUClaudeProxy-windows-x64.zip
+```
+
+## Version v1.5.0
+
+v1.5.0 is the stable guided-setup release. It includes:
+
+- A clearer three-step GUI workflow: save config, write Claude settings, then launch Claude Code.
+- Per-role Claude model routing for main, Haiku, Sonnet, Opus, and reasoning model variables.
+- A visible `Effective` routing summary so users can see which model is currently active.
+- Support for both OpenAI Responses-style and Chat Completions-style upstream endpoints.
+- Better upstream URL normalization and error reporting.
+- A larger scrollable UI for smaller displays.
 
 ## Run from Source
 
@@ -442,5 +467,6 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
+
 
 

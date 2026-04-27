@@ -255,14 +255,26 @@ def anthropic_messages_to_upstream(body: Dict[str, Any], model_config: ModelConf
     return anthropic_messages_to_responses(body, fallback_model, upstream_model)
 
 
-def open_upstream(payload: Dict[str, Any], auth_token: str, upstream_url: str, timeout: int) -> urllib.response.addinfourl:
+def normalize_upstream_url(upstream_url: str, api_format: str) -> str:
+    url = upstream_url.strip()
+    if api_format == "chat_completions" and not url.rstrip("/").endswith("/chat/completions"):
+        return url.rstrip("/") + "/chat/completions"
+    return url
+
+
+def upstream_error_message(exc: urllib.error.HTTPError) -> str:
+    error_body = exc.read().decode("utf-8", errors="replace")
+    return f"Upstream HTTP {exc.code}: {error_body}"
+
+
+def open_upstream(payload: Dict[str, Any], auth_token: str, upstream_url: str, timeout: int, api_format: str = "responses") -> urllib.response.addinfourl:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {
         "content-type": "application/json",
         "accept": "text/event-stream" if payload.get("stream") else "application/json",
         "authorization": f"Bearer {auth_token}",
     }
-    request = urllib.request.Request(upstream_url, data=data, headers=headers, method="POST")
+    request = urllib.request.Request(normalize_upstream_url(upstream_url, api_format), data=data, headers=headers, method="POST")
     return urllib.request.urlopen(request, timeout=timeout)
 
 
@@ -423,8 +435,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
         output_text_parts: List[str] = []
         delta_count = 0
         try:
-            with open_upstream(upstream_payload, auth_token, upstream_url, timeout) as response:
-                log(f"upstream connected model={model_config.model_id} status={getattr(response, 'status', 'unknown')}")
+            with open_upstream(upstream_payload, auth_token, upstream_url, timeout, model_config.api_format) as response:
+                log(f"upstream connected model={model_config.model_id} format={model_config.api_format} status={getattr(response, 'status', 'unknown')}")
                 for event, data in iter_sse_lines(response):
                     kind, parsed = extract_text_delta(event, data)
                     if kind == "delta":
@@ -447,11 +459,21 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     elif kind == "done":
                         break
         except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
+            message = upstream_error_message(exc)
+            log(f"upstream http error model={model_config.model_id} status={exc.code} body={message[:500]}")
             write_sse(self, "error", {
                 "type": "error",
-                "error": {"type": "api_error", "message": f"Upstream HTTP {exc.code}: {error_body}"},
+                "error": {"type": "api_error", "message": message},
             })
+            self.close_connection = True
+            return
+        except Exception as exc:
+            log(f"upstream connection error model={model_config.model_id} format={model_config.api_format} error={exc}")
+            write_sse(self, "error", {
+                "type": "error",
+                "error": {"type": "api_error", "message": f"Upstream connection error: {exc}"},
+            })
+            self.close_connection = True
             return
 
         output_text = "".join(output_text_parts)
@@ -468,13 +490,30 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def handle_non_streaming(self, body: Dict[str, Any], upstream_payload: Dict[str, Any], auth_token: str, upstream_url: str, timeout: int, model_config: ModelConfig) -> None:
         upstream_payload["stream"] = True
         text_parts: List[str] = []
-        with open_upstream(upstream_payload, auth_token, upstream_url, timeout) as response:
-            for event, data in iter_sse_lines(response):
-                kind, parsed = extract_text_delta(event, data)
-                if kind == "delta" and parsed:
-                    text_parts.append(parsed.get("text", ""))
-                elif kind == "done":
-                    break
+        try:
+            with open_upstream(upstream_payload, auth_token, upstream_url, timeout, model_config.api_format) as response:
+                log(f"upstream connected model={model_config.model_id} format={model_config.api_format} status={getattr(response, 'status', 'unknown')}")
+                for event, data in iter_sse_lines(response):
+                    kind, parsed = extract_text_delta(event, data)
+                    if kind == "delta" and parsed:
+                        text_parts.append(parsed.get("text", ""))
+                    elif kind == "error":
+                        send_json(self, 502, {
+                            "type": "error",
+                            "error": {"type": "api_error", "message": json.dumps(parsed, ensure_ascii=False)},
+                        })
+                        return
+                    elif kind == "done":
+                        break
+        except urllib.error.HTTPError as exc:
+            message = upstream_error_message(exc)
+            log(f"upstream http error model={model_config.model_id} status={exc.code} body={message[:500]}")
+            send_json(self, 502, {"type": "error", "error": {"type": "api_error", "message": message}})
+            return
+        except Exception as exc:
+            log(f"upstream connection error model={model_config.model_id} format={model_config.api_format} error={exc}")
+            send_json(self, 502, {"type": "error", "error": {"type": "api_error", "message": f"Upstream connection error: {exc}"}})
+            return
         text = "".join(text_parts)
         send_json(self, 200, {
             "id": anthropic_message_id(),
