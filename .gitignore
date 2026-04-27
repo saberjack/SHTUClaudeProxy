@@ -1,0 +1,36 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local app/runtime config
+config.json
+.env
+*.local.json
+*.log
+
+# Build outputs
+build/
+dist/
+*.spec
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets and backups
+*.bak
+*.key
+*.pem
+
+# Keep packaged GitHub Release artifact if desired
+!release/
+!release/SHTUClaudeProxy-windows-x64.zip
+

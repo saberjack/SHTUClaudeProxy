@@ -1,0 +1,17 @@
+﻿{
+    "host":  "127.0.0.1",
+    "port":  8082,
+    "default_model_id":  "GPT-5.5",
+    "timeout":  300,
+    "models":  [
+                   {
+                       "name":  "ShanghaiTech GPT-5.5",
+                       "model_id":  "GPT-5.5",
+                       "base_url":  "https://genaiapi.shanghaitech.edu.cn/api/v1/response",
+                       "api_key":  "",
+                       "upstream_model":  "GPT-5.5"
+                   }
+               ],
+    "claude_path":  "%APPDATA%\\npm\\claude.cmd",
+    "claude_settings_path":  "%USERPROFILE%\\.claude\\settings.json"
+}
