@@ -1,4 +1,4 @@
-﻿# SHTUClaudeProxy
+# SHTUClaudeProxy
 
 Current development version: **v1.6.0**
 
@@ -93,16 +93,26 @@ For normal conversational and many coding-assistance workflows, the proxy can be
 
 ## Requirements
 
-### Runtime
+### End Users
+
+Use the recommended single-file release:
+
+```text
+SHTUClaudeProxy-v1.6.0-windows-x64.exe
+```
+
+You do **not** need to install Python, pip, PyInstaller, or any Python packages. The single-file EXE bundles the Python runtime and required dependencies.
+
+You still need:
 
 - Windows 10/11 or Windows Server with desktop UI support.
 - Claude Code installed through npm or another method.
 - Access to ShanghaiTech GenAI Response API.
 - A valid GenAI Response API key.
 
-The built executable bundles Python runtime files via PyInstaller.
+### Developers / Building from Source
 
-### Development / Build
+Only developers who run from source or rebuild the EXE need:
 
 - Python 3.10+
 - PyInstaller
@@ -127,11 +137,21 @@ The GUI tries to detect this automatically.
 
 ### 2. Start SHTUClaudeProxy
 
-Run:
+Recommended download for normal users:
 
 ```text
-SHTUClaudeProxy.exe
+SHTUClaudeProxy-v1.6.0-windows-x64.exe
 ```
+
+Double-click it directly. No Python installation is required.
+
+Alternative portable zip package:
+
+```text
+SHTUClaudeProxy-windows-x64.zip
+```
+
+If you use the zip package, extract the whole folder and run `SHTUClaudeProxy.exe` inside it.
 
 ### 3. Configure Server Settings
 
@@ -318,25 +338,17 @@ Or install PyInstaller automatically:
 .\build_exe.ps1 -InstallDeps
 ```
 
-Output:
-
-```text
-dist\SHTUClaudeProxy\SHTUClaudeProxy.exe
-```
-
-The app is packaged as a portable folder. Distribute the whole folder:
-
-```text
-dist\SHTUClaudeProxy
-```
-
-Do not distribute only the `.exe` file, because the `_internal` runtime folder is required.
-Release files are generated at:
+Outputs:
 
 ```text
 release\SHTUClaudeProxy-v1.6.0-windows-x64.exe
 release\SHTUClaudeProxy-windows-x64.zip
+dist\SHTUClaudeProxy\SHTUClaudeProxy.exe
 ```
+
+Use `release\SHTUClaudeProxy-v1.6.0-windows-x64.exe` for normal users. It is a single-file executable and does not require Python or the `_internal` folder.
+
+Use `release\SHTUClaudeProxy-windows-x64.zip` as the portable folder package. If you distribute the zip package, users must extract the whole folder because the `_internal` runtime folder is required by the folder build.
 
 ## Version v1.6.0
 
@@ -469,6 +481,7 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
+
 
 
 
