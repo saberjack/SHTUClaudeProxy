@@ -1,6 +1,6 @@
 ﻿# SHTUClaudeProxy
 
-Current stable version: **v1.5.0**
+Current development version: **v1.6.0**
 
 SHTUClaudeProxy is a Windows desktop proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
@@ -37,7 +37,7 @@ Claude Code
 ## Features
 
 - Windows GUI; no command-line environment setup required.
-- Guided quick-start GUI with visible `Save -> Connect Claude -> Run` workflow.
+- Guided quick-start GUI with a one-click `Save + Connect + Launch` path plus manual step buttons.
 - Full-window scrolling for smaller displays.
 - Local Anthropic-compatible endpoint for Claude Code.
 - Multiple model configurations.
@@ -331,22 +331,24 @@ dist\SHTUClaudeProxy
 ```
 
 Do not distribute only the `.exe` file, because the `_internal` runtime folder is required.
-The release zip is generated at:
+Release files are generated at:
 
 ```text
+release\SHTUClaudeProxy-v1.6.0-windows-x64.exe
 release\SHTUClaudeProxy-windows-x64.zip
 ```
 
-## Version v1.5.0
+## Version v1.6.0
 
-v1.5.0 is the stable guided-setup release. It includes:
+v1.6.0 is the zero-install release. It includes:
 
-- A clearer three-step GUI workflow: save config, write Claude settings, then launch Claude Code.
+- A one-click setup path: save config, write Claude settings, start the proxy, then launch Claude Code.
 - Per-role Claude model routing for main, Haiku, Sonnet, Opus, and reasoning model variables.
 - A visible `Effective` routing summary so users can see which model is currently active.
 - Support for both OpenAI Responses-style and Chat Completions-style upstream endpoints.
 - Better upstream URL normalization and error reporting.
 - A larger scrollable UI for smaller displays.
+- A single-file Windows EXE release that does not require Python installation or a sidecar `_internal` folder.
 
 ## Run from Source
 
@@ -467,6 +469,8 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
+
+
 
 
 

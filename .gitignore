@@ -34,3 +34,6 @@ Thumbs.db
 !release/
 !release/SHTUClaudeProxy-windows-x64.zip
 
+
+# Local release backups
+backups/

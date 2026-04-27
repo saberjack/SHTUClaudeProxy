@@ -52,6 +52,7 @@ class ProxyApp(tk.Tk):
         self.create_widgets()
         self.refresh_model_list()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.after(300, self.show_first_run_tip)
 
     def configure_styles(self) -> None:
         style = ttk.Style(self)
@@ -105,12 +106,22 @@ class ProxyApp(tk.Tk):
 
         actions = ttk.LabelFrame(root, text="Quick Start")
         actions.pack(fill=tk.X, pady=(0, 10))
-        for column in range(3):
+        for column in range(4):
             actions.columnconfigure(column, weight=1)
 
         self.create_step_card(
             actions,
             0,
+            "Fast Start",
+            "Save + Connect + Launch",
+            "Recommended: write settings, start proxy, and open Claude Code.",
+            self.setup_and_launch,
+            "Success.TButton",
+        )
+
+        self.create_step_card(
+            actions,
+            1,
             "1. Save",
             "Save Config",
             "Save model, routing, key, URL, and server settings.",
@@ -119,7 +130,7 @@ class ProxyApp(tk.Tk):
         )
         self.create_step_card(
             actions,
-            1,
+            2,
             "2. Connect Claude",
             "Write Claude Settings",
             "One-time setup: write selected model routing to Claude Code.",
@@ -128,7 +139,7 @@ class ProxyApp(tk.Tk):
         )
         self.create_step_card(
             actions,
-            2,
+            3,
             "3. Run",
             "Start Proxy + Launch Claude",
             "Daily use: start proxy, then open Claude Code.",
@@ -341,6 +352,24 @@ class ProxyApp(tk.Tk):
         self.upstream_model_var.set(model.upstream_model)
         self.api_format_var.set(getattr(model, "api_format", "responses") or "responses")
 
+    def needs_first_run_setup(self) -> bool:
+        return not any(model.api_key.strip() for model in self.config_data.models)
+
+    def show_first_run_tip(self) -> None:
+        if not self.needs_first_run_setup():
+            return
+        messagebox.showinfo(
+            "First-time setup",
+            "Welcome to SHTUClaudeProxy.\n\n"
+            "For first-time use, you usually only need to:\n"
+            "1. Paste your GenAI API Key in Model Config.\n"
+            "2. Confirm Base URL / API Format / Upstream Model.\n"
+            "3. Click Save Config.\n"
+            "4. Click Write Claude Settings.\n"
+            "5. Click Start Proxy + Launch Claude.\n\n"
+            "No Python installation is required when using the release EXE."
+        )
+
     def new_model(self) -> None:
         model = ModelConfig(
             name="New Model",
@@ -494,8 +523,11 @@ class ProxyApp(tk.Tk):
             "includeCoAuthoredBy": False,
         }
 
-    def write_claude_settings(self) -> None:
+    def write_claude_settings(self, notify: bool = True) -> bool:
         self.save()
+        if self.needs_first_run_setup():
+            messagebox.showwarning("API key required", "Please paste your GenAI API Key before writing Claude settings.")
+            return False
         settings_path = Path(self.config_data.claude_settings_path).expanduser()
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         existing: dict[str, object] = {}
@@ -514,7 +546,14 @@ class ProxyApp(tk.Tk):
         self.append_log(f"Wrote Claude settings env: {settings_path}")
         if not self.server:
             self.start_proxy()
-        messagebox.showinfo("Claude settings written", f"Updated env in:\n{settings_path}\n\nProxy is running at http://{self.config_data.host}:{self.config_data.port}. Restart Claude Code to use it.")
+        if notify:
+            messagebox.showinfo("Claude settings written", f"Updated env in:\n{settings_path}\n\nProxy is running at http://{self.config_data.host}:{self.config_data.port}. Restart Claude Code to use it.")
+        return True
+
+    def setup_and_launch(self) -> None:
+        if not self.write_claude_settings(notify=False):
+            return
+        self.launch_claude_code()
 
     def launch_script_text(self) -> str:
         env = self.claude_env()
