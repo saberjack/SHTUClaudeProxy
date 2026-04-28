@@ -95,12 +95,12 @@ class ProxyApp(tk.Tk):
         intro_frame.columnconfigure(0, weight=1)
         ttk.Label(
             intro_frame,
-            text="Follow 1 → 2 → 3 for first-time setup. After that, usually only Step 3 is needed.（首次按 1→2→3，之后通常只按第 3 步）",
+            text="Follow 1 -> 2 -> 3 for first-time setup. After that, usually only Step 3 is needed.",
             style="StepTitle.TLabel",
         ).grid(row=0, column=0, padx=10, pady=(8, 2), sticky="w")
         ttk.Label(
             intro_frame,
-            text="Advanced buttons are optional. You can ignore them for normal daily use.（高级按钮日常可忽略）",
+            text="Advanced buttons are optional. You can ignore them for normal daily use.",
             style="Hint.TLabel",
         ).grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
 
