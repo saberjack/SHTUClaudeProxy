@@ -1,5 +1,20 @@
 ﻿# Changelog
 
+## v1.9.0 - 2026-04-28
+
+Claude Code tool-call compatibility release.
+
+### Added
+
+- Bidirectional tool-call translation between Anthropic `tool_use/tool_result` and upstream Chat Completions `tool_calls`.
+- Bidirectional tool-call translation between Anthropic `tool_use/tool_result` and upstream Responses `function_call/function_call_output`.
+- Streaming conversion from upstream tool-call events into Anthropic-style `tool_use` content blocks.
+- Smoke-test coverage for tool schema conversion, tool history conversion, streamed tool-call deltas, and `stop_reason: tool_use`.
+
+### Changed
+
+- Tool schemas are now sent as real upstream tools instead of text-only context notes.
+- Tool results are now preserved as structured tool outputs instead of plain text fallbacks.
 ## v1.8.0 - 2026-04-28
 
 Default API format and Base URL update.
@@ -68,6 +83,7 @@ Stable guided-setup release.
 - Moved advanced actions into a separate optional section.
 - Improved non-streaming and streaming upstream error reporting.
 - Updated the release zip with the latest Windows build.
+
 
 
 

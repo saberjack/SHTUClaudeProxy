@@ -1,6 +1,6 @@
 ﻿# SHTUClaudeProxy
 
-Current development version: **v1.8.0**
+Current development version: **v1.9.0**
 
 SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
@@ -58,6 +58,7 @@ Claude Code
 - Auto-detection of npm-installed Claude Code.
 - Portable across Windows, Linux, and macOS user accounts where Python/Tkinter is available.
 - PyInstaller build script for Windows release packaging.
+- Bidirectional tool-call translation for Claude Code `tool_use/tool_result` and upstream `tool_calls/function_call` protocols.
 
 ## Intended Audience
 
@@ -67,16 +68,16 @@ It is not an official Anthropic product, not an OpenAI product, and not a genera
 
 ## Important Limitations
 
-This project currently focuses on text streaming compatibility.
+This project focuses on text streaming compatibility plus Claude Code tool-call bridging.
 
 Known limitations:
 
-- Tool calls are only partially represented and are not fully translated between Anthropic `tool_use` and OpenAI Responses tool calls.
+- Tool calls are translated between Anthropic `tool_use/tool_result` and upstream Chat Completions `tool_calls` or Responses `function_call/function_call_output` formats.
 - Token usage fields are approximate.
 - Images are best-effort only.
-- Very complex Claude Code workflows may need more complete tool-call translation.
+- Very complex Claude Code workflows may still need additional edge-case testing against the exact upstream model behavior.
 
-For normal conversational and many coding-assistance workflows, the proxy can be sufficient. For advanced autonomous coding workflows, additional protocol translation may be required.
+For normal conversational and many coding-assistance workflows, the proxy can be sufficient. For advanced autonomous coding workflows, validate with a small file-read or command-style Claude Code task first.
 
 ## Repository Layout
 
@@ -365,6 +366,16 @@ For Linux/macOS packaging from source, run:
 ```
 
 This generates a platform-specific single-file binary and a `.tar.gz` folder package under `release/`.
+
+## Version v1.9.0
+
+v1.9.0 adds real Claude Code tool-call bridging:
+
+- Converts Claude Code `tools` into upstream Chat Completions `tools` or Responses `tools`.
+- Converts assistant `tool_use` history into Chat Completions `tool_calls` or Responses `function_call` items.
+- Converts Claude Code `tool_result` messages into Chat Completions `tool` messages or Responses `function_call_output` items.
+- Converts upstream streamed `tool_calls` / `function_call` events back into Anthropic-style `tool_use` content blocks.
+- Returns `stop_reason: tool_use` when the upstream model requests tool execution.
 
 ## Version v1.8.0
 
