@@ -1,5 +1,18 @@
 ﻿# Changelog
 
+## v1.8.0 - 2026-04-28
+
+Default API format and Base URL update.
+
+### Changed
+
+- Renamed GUI field `Responses Base URL` to `Base URL`.
+- Changed default API Format to `chat_completions`.
+- Changed default Base URL to `https://genaiapi.shanghaitech.edu.cn/api/v1/start`.
+- API Format selection now automatically updates Base URL:
+  - `chat_completions` -> `https://genaiapi.shanghaitech.edu.cn/api/v1/start`
+  - `responses` -> `https://genaiapi.shanghaitech.edu.cn/api/v1/response`
+- Added GUI hint text listing valid API Format options.
 ## v1.7.0 - 2026-04-28
 
 Cross-platform source release for Linux and macOS.
@@ -55,6 +68,7 @@ Stable guided-setup release.
 - Moved advanced actions into a separate optional section.
 - Improved non-streaming and streaming upstream error reporting.
 - Updated the release zip with the latest Windows build.
+
 
 
 

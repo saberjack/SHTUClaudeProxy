@@ -11,7 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 import proxy
-from config_store import AppConfig, MODEL_ENV_KEYS, ModelConfig, config_path, default_claude_path, default_claude_settings_path, load_config, portable_claude_path, portable_settings_path, save_config
+from config_store import AppConfig, DEFAULT_API_FORMAT, DEFAULT_CHAT_COMPLETIONS_URL, DEFAULT_RESPONSES_URL, MODEL_ENV_KEYS, ModelConfig, config_path, default_claude_path, default_claude_settings_path, load_config, portable_claude_path, portable_settings_path, save_config
 from platform_utils import is_windows, launch_claude, launch_script_filename, launch_script_text
 
 
@@ -45,7 +45,7 @@ class ProxyApp(tk.Tk):
         self.base_url_var = tk.StringVar()
         self.api_key_var = tk.StringVar()
         self.upstream_model_var = tk.StringVar()
-        self.api_format_var = tk.StringVar(value="responses")
+        self.api_format_var = tk.StringVar(value=DEFAULT_API_FORMAT)
         self.status_var = tk.StringVar(value="Stopped")
 
         self.configure_styles()
@@ -225,7 +225,7 @@ class ProxyApp(tk.Tk):
         fields = [
             ("Display Name", self.name_var),
             ("Model ID for Claude Code", self.model_id_var),
-            ("Responses Base URL", self.base_url_var),
+            ("Base URL", self.base_url_var),
             ("API Key", self.api_key_var),
             ("Upstream Model", self.upstream_model_var),
         ]
@@ -234,16 +234,18 @@ class ProxyApp(tk.Tk):
             show = "*" if label == "API Key" else None
             ttk.Entry(edit_frame, textvariable=variable, show=show).grid(row=row, column=1, padx=8, pady=4, sticky="ew")
         ttk.Label(edit_frame, text="API Format").grid(row=5, column=0, padx=8, pady=4, sticky="w")
-        ttk.Combobox(
+        api_format_combo = ttk.Combobox(
             edit_frame,
             textvariable=self.api_format_var,
             values=("responses", "chat_completions"),
             state="readonly",
-        ).grid(row=5, column=1, padx=8, pady=4, sticky="ew")
+        )
+        api_format_combo.grid(row=5, column=1, padx=8, pady=4, sticky="ew")
+        api_format_combo.bind("<<ComboboxSelected>>", self.on_api_format_changed)
 
         hint = (
             "Step 1: Fill API Key, Base URL, API Format, and Upstream Model.\n"
-            "Claude Code sees Model ID; the upstream service receives Upstream Model."
+            "API Format options: responses, chat_completions. Changing API Format updates Base URL automatically."
         )
         ttk.Label(edit_frame, text=hint, style="Hint.TLabel").grid(row=6, column=0, columnspan=2, padx=8, pady=4, sticky="w")
         ttk.Button(edit_frame, text="Apply Model Changes", command=self.apply_model).grid(row=7, column=1, padx=8, pady=4, sticky="e")
@@ -350,7 +352,14 @@ class ProxyApp(tk.Tk):
         self.base_url_var.set(model.base_url)
         self.api_key_var.set(model.api_key)
         self.upstream_model_var.set(model.upstream_model)
-        self.api_format_var.set(getattr(model, "api_format", "responses") or "responses")
+        self.api_format_var.set(getattr(model, "api_format", DEFAULT_API_FORMAT) or DEFAULT_API_FORMAT)
+
+    def on_api_format_changed(self, _event: object = None) -> None:
+        api_format = self.api_format_var.get().strip() or DEFAULT_API_FORMAT
+        if api_format == "responses":
+            self.base_url_var.set(DEFAULT_RESPONSES_URL)
+        elif api_format == "chat_completions":
+            self.base_url_var.set(DEFAULT_CHAT_COMPLETIONS_URL)
 
     def needs_first_run_setup(self) -> bool:
         return not any(model.api_key.strip() for model in self.config_data.models)
@@ -374,10 +383,10 @@ class ProxyApp(tk.Tk):
         model = ModelConfig(
             name="New Model",
             model_id="new-model-id",
-            base_url="https://genaiapi.shanghaitech.edu.cn/api/v1/response",
+            base_url=DEFAULT_CHAT_COMPLETIONS_URL,
             api_key="",
             upstream_model="GPT-5.5",
-            api_format="responses",
+            api_format=DEFAULT_API_FORMAT,
         )
         self.config_data.models.append(model)
         self.refresh_model_list()
@@ -405,7 +414,7 @@ class ProxyApp(tk.Tk):
             base_url=self.base_url_var.get().strip(),
             api_key=self.api_key_var.get().strip(),
             upstream_model=self.upstream_model_var.get().strip() or self.model_id_var.get().strip(),
-            api_format=self.api_format_var.get().strip() or "responses",
+            api_format=self.api_format_var.get().strip() or DEFAULT_API_FORMAT,
         )
         if not model.model_id or not model.base_url:
             messagebox.showerror("Missing value", "Model ID and Base URL are required.")

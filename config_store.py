@@ -12,7 +12,10 @@ from platform_utils import app_dir, default_claude_path, default_claude_settings
 APP_NAME = "SHTUClaudeProxy"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8082
-DEFAULT_UPSTREAM_URL = "https://genaiapi.shanghaitech.edu.cn/api/v1/response"
+DEFAULT_RESPONSES_URL = "https://genaiapi.shanghaitech.edu.cn/api/v1/response"
+DEFAULT_CHAT_COMPLETIONS_URL = "https://genaiapi.shanghaitech.edu.cn/api/v1/start"
+DEFAULT_UPSTREAM_URL = DEFAULT_CHAT_COMPLETIONS_URL
+DEFAULT_API_FORMAT = "chat_completions"
 DEFAULT_MODEL_ID = "GPT-5.5"
 MODEL_ENV_KEYS = (
     "ANTHROPIC_MODEL",
@@ -41,7 +44,7 @@ class ModelConfig:
             base_url=str(data.get("base_url") or DEFAULT_UPSTREAM_URL).strip(),
             api_key=str(data.get("api_key") or "").strip(),
             upstream_model=str(data.get("upstream_model") or model_id).strip(),
-            api_format=str(data.get("api_format") or "responses").strip(),
+            api_format=str(data.get("api_format") or DEFAULT_API_FORMAT).strip(),
         )
 
     def to_dict(self) -> Dict[str, str]:
@@ -83,7 +86,7 @@ class AppConfig:
                     base_url=DEFAULT_UPSTREAM_URL,
                     api_key="",
                     upstream_model=DEFAULT_MODEL_ID,
-                    api_format="responses",
+                    api_format=DEFAULT_API_FORMAT,
                 )
             ],
         )

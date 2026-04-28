@@ -1,6 +1,6 @@
-# SHTUClaudeProxy
+﻿# SHTUClaudeProxy
 
-Current stable version: **v1.7.0**
+Current development version: **v1.8.0**
 
 SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
@@ -182,7 +182,7 @@ For each model entry:
 | --- | --- | --- |
 | Display Name | Friendly name shown in the GUI | ShanghaiTech GPT-5.5 |
 | Model ID for Claude Code | Model name Claude Code will request | GPT-5.5 |
-| Responses Base URL | Campus GenAI Response API endpoint | https://genaiapi.shanghaitech.edu.cn/api/v1/response |
+| Base URL | Campus GenAI API endpoint | chat_completions: https://genaiapi.shanghaitech.edu.cn/api/v1/start; responses: https://genaiapi.shanghaitech.edu.cn/api/v1/response |
 | API Key | Your campus API key | keep private |
 | Upstream Model | Model ID sent to GenAI Response API | GPT-5.5 |
 
@@ -267,7 +267,7 @@ For ShanghaiTech GenAI Chat Completions endpoints, configure a model like this:
 {
   "name": "ShanghaiTech DeepSeek Pro Chat Completions",
   "model_id": "deepseek-pro",
-  "base_url": "https://genaiapi.shanghaitech.edu.cn/api/v1/start/chat/completions",
+  "base_url": "https://genaiapi.shanghaitech.edu.cn/api/v1/start",
   "api_key": "YOUR_API_KEY",
   "upstream_model": "deepseek-pro",
   "api_format": "chat_completions"
@@ -293,7 +293,7 @@ curl -X POST https://genaiapi.shanghaitech.edu.cn/api/v1/start/chat/completions 
   }'
 ```
 
-In the GUI, set `API Format` to `chat_completions` for this endpoint.
+In the GUI, `API Format` supports `responses` and `chat_completions`. Selecting `chat_completions` fills Base URL with `https://genaiapi.shanghaitech.edu.cn/api/v1/start`; selecting `responses` fills Base URL with `https://genaiapi.shanghaitech.edu.cn/api/v1/response`.
 
 ## Multiple Models
 
@@ -303,7 +303,7 @@ Example:
 
 | Model ID for Claude Code | Upstream Model | Base URL |
 | --- | --- | --- |
-| GPT-5.5 | GPT-5.5 | https://genaiapi.shanghaitech.edu.cn/api/v1/response |
+| GPT-5.5 | GPT-5.5 | https://genaiapi.shanghaitech.edu.cn/api/v1/start |
 | GPT-5.5-fast | GPT-5.5 | another compatible endpoint |
 | GPT-5.5-reasoning | GPT-5.5 | another compatible endpoint |
 
@@ -366,6 +366,15 @@ For Linux/macOS packaging from source, run:
 
 This generates a platform-specific single-file binary and a `.tar.gz` folder package under `release/`.
 
+## Version v1.8.0
+
+v1.8.0 updates the default upstream configuration and GUI labels:
+
+- Renames `Responses Base URL` to `Base URL` in the GUI.
+- Changes the default API Format to `chat_completions`.
+- Uses `https://genaiapi.shanghaitech.edu.cn/api/v1/start` as the default Base URL for `chat_completions`.
+- Automatically switches Base URL to `https://genaiapi.shanghaitech.edu.cn/api/v1/response` when API Format is `responses`.
+- Adds clearer GUI hint text for the two API Format options.
 ## Version v1.7.0
 
 v1.7.0 adds Linux/macOS source-based support while keeping the Windows v1.6.0 release package unchanged. It includes:
@@ -396,11 +405,11 @@ Windows users should normally download the single-file EXE from the Release page
 
 ### 1. Unpack the Source Package
 
-The Linux/macOS prototype source package should unpack into its own directory:
+The Linux/macOS source package should unpack into its own directory:
 
 ```bash
-unzip SHTUClaudeProxy-v1.7.0-source-linux-macos.zip
-cd SHTUClaudeProxy-v1.7.0-source-linux-macos
+unzip SHTUClaudeProxy-v1.8.0-source-linux-macos.zip
+cd SHTUClaudeProxy-v1.8.0-source-linux-macos
 ```
 
 Run the smoke test first:
@@ -483,7 +492,7 @@ On Linux servers without a local desktop, use X11 forwarding:
 
 ```bash
 ssh -X user@host
-cd SHTUClaudeProxy-v1.7.0-source-linux-macos
+cd SHTUClaudeProxy-v1.8.0-source-linux-macos
 python3 app.py
 ```
 
@@ -666,6 +675,9 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
+
+
+
 
 
 
