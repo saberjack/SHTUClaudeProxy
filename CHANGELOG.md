@@ -1,5 +1,21 @@
 ﻿# Changelog
 
+## v1.7.0 - 2026-04-28
+
+Cross-platform source release for Linux and macOS.
+
+### Added
+
+- Linux/macOS source package: `SHTUClaudeProxy-v1.7.0-source-linux-macos.zip`.
+- Headless CLI mode with `show-config`, `print-env`, `write-settings`, `install-launch-script`, and `serve` commands.
+- Cross-platform path, launch script, and Claude launch helpers.
+- X11 forwarding documentation for Linux GUI use.
+- Smoke test script for Linux/macOS validation.
+
+### Changed
+
+- GUI text is now English-only to avoid missing Chinese font rendering on Linux.
+- Windows v1.6.0 binaries are not rebuilt for this release.
 ## v1.6.0 - 2026-04-27
 
 Zero-install release focused on ordinary end users.
@@ -39,5 +55,6 @@ Stable guided-setup release.
 - Moved advanced actions into a separate optional section.
 - Improved non-streaming and streaming upstream error reporting.
 - Updated the release zip with the latest Windows build.
+
 
 

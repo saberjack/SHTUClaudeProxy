@@ -37,3 +37,8 @@ Thumbs.db
 
 # Local release backups
 backups/
+
+# Smoke test scratch
+.smoke_tmp/
+# Cross-platform source bundles
+release/SHTUClaudeProxy-source-*.zip

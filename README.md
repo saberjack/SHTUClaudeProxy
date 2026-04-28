@@ -1,12 +1,12 @@
-# SHTUClaudeProxy
+﻿# SHTUClaudeProxy
 
-Current development version: **v1.6.0**
+Current stable version: **v1.7.0**
 
-SHTUClaudeProxy is a Windows desktop proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
+SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
 This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It helps users access Claude Code through the university GenAI Response API by translating Claude Code's Anthropic Messages API traffic into an OpenAI Responses-style upstream request and converting streaming responses back into Claude Code-compatible Server-Sent Events.
 
-> 中文简介：SHTUClaudeProxy sunyb 制作的 Windows 图形化本地代理工具，供校内 GenAI API 接入 Claude Code 使用。
+> Note: SHTUClaudeProxy is a local proxy tool created by sunyb for ShanghaiTech campus GenAI API access from Claude Code.
 
 ## What It Does
 
@@ -36,7 +36,7 @@ Claude Code
 
 ## Features
 
-- Windows GUI; no command-line environment setup required.
+- Windows GUI release; Linux/macOS can run from source with GUI or CLI mode.
 - Guided quick-start GUI with a one-click `Save + Connect + Launch` path plus manual step buttons.
 - Full-window scrolling for smaller displays.
 - Local Anthropic-compatible endpoint for Claude Code.
@@ -52,7 +52,7 @@ Claude Code
 - One-click writing of Claude Code `settings.json`.
 - One-click Claude Code launch with proxy environment.
 - Auto-detection of npm-installed Claude Code.
-- Portable across Windows user accounts and machines.
+- Portable across Windows, Linux, and macOS user accounts where Python/Tkinter is available.
 - PyInstaller build script for Windows release packaging.
 
 ## Intended Audience
@@ -81,10 +81,13 @@ For normal conversational and many coding-assistance workflows, the proxy can be
 ├── app.py                 # GUI entry point
 ├── gui.py                 # Tkinter desktop UI
 ├── proxy.py               # Anthropic Messages <-> Responses proxy
+├── cli.py                 # Headless command-line tools
+├── platform_utils.py      # Cross-platform path, script, and launch helpers
 ├── config_store.py        # Config loading, defaults, path portability
 ├── config.example.json    # Safe example config without API key
 ├── build_exe.ps1          # Windows build script
 ├── build_exe.bat          # Double-click build helper
+├── build_unix.sh          # Linux/macOS build script
 ├── requirements-build.txt # Build-time dependency list
 ├── LICENSE
 ├── SECURITY.md
@@ -105,14 +108,15 @@ You do **not** need to install Python, pip, PyInstaller, or any Python packages.
 
 You still need:
 
-- Windows 10/11 or Windows Server with desktop UI support.
+- Windows 10/11 or Windows Server with desktop UI support for the packaged EXE.
+- For Linux/macOS: Python 3.10+ from source; Tkinter/display server for GUI, or CLI mode for headless servers.
 - Claude Code installed through npm or another method.
 - Access to ShanghaiTech GenAI Response API.
 - A valid GenAI Response API key.
 
 ### Developers / Building from Source
 
-Only developers who run from source or rebuild the EXE need:
+Developers, Linux/macOS users running from source, or anyone rebuilding packages need:
 
 - Python 3.10+
 - PyInstaller
@@ -348,8 +352,27 @@ dist\SHTUClaudeProxy\SHTUClaudeProxy.exe
 
 Use `release\SHTUClaudeProxy-v1.6.0-windows-x64.exe` for normal users. It is a single-file executable and does not require Python or the `_internal` folder.
 
-Use `release\SHTUClaudeProxy-windows-x64.zip` as the portable folder package. If you distribute the zip package, users must extract the whole folder because the `_internal` runtime folder is required by the folder build.
+Use `release\SHTUClaudeProxy-windows-x64.zip` as the Windows portable folder package. If you distribute the zip package, users must extract the whole folder because the `_internal` runtime folder is required by the folder build.
 
+For Linux/macOS packaging from source, run:
+
+```bash
+./build_unix.sh
+```
+
+This generates a platform-specific single-file binary and a `.tar.gz` folder package under `release/`.
+
+## Version v1.7.0
+
+v1.7.0 adds Linux/macOS source-based support while keeping the Windows v1.6.0 release package unchanged. It includes:
+
+- Linux/macOS GUI support from source with Tkinter.
+- Headless CLI mode for servers without a display.
+- X11 forwarding guidance for remote Linux GUI use.
+- Cross-platform Claude path, settings path, launch script, and launch helpers.
+- A Linux/macOS smoke test script.
+- A source zip package that extracts into its own directory.
+- English-only GUI text to avoid Linux font fallback issues.
 ## Version v1.6.0
 
 v1.6.0 is the zero-install release. It includes:
@@ -361,6 +384,164 @@ v1.6.0 is the zero-install release. It includes:
 - Better upstream URL normalization and error reporting.
 - A larger scrollable UI for smaller displays.
 - A single-file Windows EXE release that does not require Python installation or a sidecar `_internal` folder.
+
+
+## Linux and macOS Usage
+
+Windows users should normally download the single-file EXE from the Release page. Linux and macOS support is source-based at this stage.
+
+### 1. Unpack the Source Package
+
+The Linux/macOS prototype source package should unpack into its own directory:
+
+```bash
+unzip SHTUClaudeProxy-v1.7.0-source-linux-macos.zip
+cd SHTUClaudeProxy-v1.7.0-source-linux-macos
+```
+
+Run the smoke test first:
+
+```bash
+python3 -m py_compile app.py cli.py config_store.py gui.py platform_utils.py proxy.py smoke_test.py
+python3 smoke_test.py
+```
+
+Expected output:
+
+```text
+SHTUClaudeProxy smoke test passed
+```
+
+### 2. Configure API Key and Model
+
+Start once to generate `config.json`, or copy from `config.example.json`:
+
+```bash
+python3 cli.py show-config
+cp config.example.json config.json
+```
+
+Edit `config.json` with your editor:
+
+```bash
+nano config.json
+```
+
+At minimum, fill these fields in the model you want to use:
+
+```json
+{
+  "model_id": "GPT-5.5",
+  "base_url": "https://genaiapi.shanghaitech.edu.cn/api/v1/response",
+  "api_key": "PASTE_YOUR_GENAI_API_KEY_HERE",
+  "upstream_model": "GPT-5.5",
+  "api_format": "responses"
+}
+```
+
+Important fields:
+
+- `model_id`: the model name Claude Code will request.
+- `base_url`: the upstream GenAI API endpoint.
+- `api_key`: your GenAI API key. Keep it private.
+- `upstream_model`: the actual upstream model name sent to GenAI API.
+- `api_format`: use `responses` or `chat_completions`.
+
+For Chat Completions-compatible upstreams, use:
+
+```json
+"api_format": "chat_completions"
+```
+
+Model routing is controlled by `model_env`:
+
+```json
+"model_env": {
+  "ANTHROPIC_MODEL": "GPT-5.5",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL": "GPT-5.5",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL": "GPT-5.5",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL": "GPT-5.5",
+  "ANTHROPIC_REASONING_MODEL": "GPT-5.5"
+}
+```
+
+Each value must match one configured `model_id`. They can all be the same, or you can route different Claude roles to different configured models.
+
+### 3. GUI Mode
+
+Run the Tkinter GUI from source:
+
+```bash
+python3 app.py
+```
+
+On Linux servers without a local desktop, use X11 forwarding:
+
+```bash
+ssh -X user@host
+cd SHTUClaudeProxy-v1.7.0-source-linux-macos
+python3 app.py
+```
+
+If Tkinter is missing on Linux, install the system package for your distribution, for example:
+
+```bash
+sudo apt install python3-tk
+```
+
+### 4. Headless CLI Mode
+
+For Linux servers without GUI or X11 forwarding, use CLI mode.
+
+Check resolved config:
+
+```bash
+python3 cli.py show-config
+```
+
+Write Claude Code settings:
+
+```bash
+python3 cli.py write-settings
+```
+
+This updates:
+
+```text
+~/.claude/settings.json
+```
+
+Install a helper launch script:
+
+```bash
+python3 cli.py install-launch-script
+```
+
+This creates:
+
+```text
+~/shtu-claude-proxy/claude-shtu.sh
+```
+
+Start the proxy in one terminal:
+
+```bash
+python3 cli.py serve
+```
+
+In another terminal, launch Claude Code through the helper script:
+
+```bash
+~/shtu-claude-proxy/claude-shtu.sh
+```
+
+Alternatively, print environment variables and apply them manually:
+
+```bash
+python3 cli.py print-env
+```
+
+Then run `claude` in the same shell after exporting those variables.
 
 ## Run from Source
 
@@ -481,6 +662,9 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
+
+
+
 
 
 
