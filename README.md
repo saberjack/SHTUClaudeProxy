@@ -8,7 +8,9 @@ This tool was created by **sunyb, ShanghaiTech University Library and Informatio
 
 > Note: SHTUClaudeProxy is a local proxy tool created by sunyb for ShanghaiTech campus GenAI API access from Claude Code.
 
-<img width="1630" height="1035" alt="image" src="https://github.com/user-attachments/assets/4a647f90-798b-4eeb-af7f-6361be3951d4" />
+<img width="1278" height="1034" alt="image" src="https://github.com/user-attachments/assets/8287915e-d569-488c-a64f-c3bd5e7a2e81" />
+<img width="1258" height="257" alt="image" src="https://github.com/user-attachments/assets/48f637fc-042d-4738-8ebe-2949a12fe067" />
+
 <img width="1195" height="449" alt="image" src="https://github.com/user-attachments/assets/7f9ffe47-b5c1-4a66-ab05-1b6c747335c8" />
 
 
