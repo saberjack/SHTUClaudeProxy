@@ -10,8 +10,8 @@ This tool was created by **sunyb, ShanghaiTech University Library and Informatio
 
 <img width="1278" height="1034" alt="image" src="https://github.com/user-attachments/assets/8287915e-d569-488c-a64f-c3bd5e7a2e81" />
 <img width="1258" height="257" alt="image" src="https://github.com/user-attachments/assets/48f637fc-042d-4738-8ebe-2949a12fe067" />
-
 <img width="1195" height="449" alt="image" src="https://github.com/user-attachments/assets/7f9ffe47-b5c1-4a66-ab05-1b6c747335c8" />
+<img width="2456" height="1620" alt="5cf20b87c9f360383d6b1c8d2fa02b48" src="https://github.com/user-attachments/assets/602ffb99-90ca-44b0-b302-911641c7dc7e" />
 
 
 ## What It Does
