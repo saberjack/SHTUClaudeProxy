@@ -1,6 +1,6 @@
 ﻿# SHTUClaudeProxy
 
-Current development version: **v1.6.0**
+Current stable version: **v1.7.0**
 
 SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
@@ -362,6 +362,17 @@ For Linux/macOS packaging from source, run:
 
 This generates a platform-specific single-file binary and a `.tar.gz` folder package under `release/`.
 
+## Version v1.7.0
+
+v1.7.0 adds Linux/macOS source-based support while keeping the Windows v1.6.0 release package unchanged. It includes:
+
+- Linux/macOS GUI support from source with Tkinter.
+- Headless CLI mode for servers without a display.
+- X11 forwarding guidance for remote Linux GUI use.
+- Cross-platform Claude path, settings path, launch script, and launch helpers.
+- A Linux/macOS smoke test script.
+- A source zip package that extracts into its own directory.
+- English-only GUI text to avoid Linux font fallback issues.
 ## Version v1.6.0
 
 v1.6.0 is the zero-install release. It includes:
@@ -384,8 +395,8 @@ Windows users should normally download the single-file EXE from the Release page
 The Linux/macOS prototype source package should unpack into its own directory:
 
 ```bash
-unzip SHTUClaudeProxy-source-linux-macos-prototype.zip
-cd SHTUClaudeProxy-source-linux-macos-prototype
+unzip SHTUClaudeProxy-v1.7.0-source-linux-macos.zip
+cd SHTUClaudeProxy-v1.7.0-source-linux-macos
 ```
 
 Run the smoke test first:
@@ -468,7 +479,7 @@ On Linux servers without a local desktop, use X11 forwarding:
 
 ```bash
 ssh -X user@host
-cd SHTUClaudeProxy-source-linux-macos-prototype
+cd SHTUClaudeProxy-v1.7.0-source-linux-macos
 python3 app.py
 ```
 
@@ -651,6 +662,7 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
+
 
 
 
