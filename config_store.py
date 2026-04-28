@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import os
 import sys
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from platform_utils import app_dir, default_claude_path, default_claude_settings_path, portable_claude_path, portable_settings_path
 
 APP_NAME = "SHTUClaudeProxy"
 DEFAULT_HOST = "127.0.0.1"
@@ -20,50 +21,6 @@ MODEL_ENV_KEYS = (
     "ANTHROPIC_DEFAULT_OPUS_MODEL",
     "ANTHROPIC_REASONING_MODEL",
 )
-
-
-def default_claude_settings_path() -> str:
-    return str(Path.home() / ".claude" / "settings.json")
-
-
-def default_claude_path() -> str:
-    found = shutil.which("claude.cmd") or shutil.which("claude.exe") or shutil.which("claude")
-    if found:
-        return found
-    appdata = os.getenv("APPDATA")
-    if appdata:
-        return str(Path(appdata) / "npm" / "claude.cmd")
-    return "claude"
-
-
-def path_has_other_user_home(value: str) -> bool:
-    if not value:
-        return False
-    normalized = value.replace("/", "\\").lower()
-    current_home = str(Path.home()).replace("/", "\\").lower()
-    users_root = str(Path.home().parent).replace("/", "\\").lower()
-    return normalized.startswith(users_root + "\\") and not normalized.startswith(current_home + "\\")
-
-
-def portable_claude_path(value: str) -> str:
-    value = (value or "").strip()
-    if not value or path_has_other_user_home(value):
-        return default_claude_path()
-    expanded = os.path.expandvars(value)
-    if expanded != value:
-        return expanded
-    candidate = Path(value)
-    if candidate.is_absolute() and not candidate.exists() and "node_modules" not in value:
-        found = default_claude_path()
-        return found or value
-    return value
-
-
-def portable_settings_path(value: str) -> str:
-    value = (value or "").strip()
-    if not value or path_has_other_user_home(value):
-        return default_claude_settings_path()
-    return os.path.expandvars(value)
 
 
 @dataclass
@@ -173,13 +130,6 @@ class AppConfig:
                 if candidate in (model.model_id, model.name, model.upstream_model):
                     return model
         return self.models[0]
-
-
-def app_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / APP_NAME
-    return Path(__file__).resolve().parent
 
 
 def config_path() -> Path:
