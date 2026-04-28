@@ -1,12 +1,23 @@
+<<<<<<< HEAD
 ﻿# SHTUClaudeProxy
 
 Current stable version: **v1.7.0**
+=======
+Current development version: **v1.6.0**
+>>>>>>> origin/main
 
 SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
 This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It helps users access Claude Code through the university GenAI Response API by translating Claude Code's Anthropic Messages API traffic into an OpenAI Responses-style upstream request and converting streaming responses back into Claude Code-compatible Server-Sent Events.
 
+<<<<<<< HEAD
 > Note: SHTUClaudeProxy is a local proxy tool created by sunyb for ShanghaiTech campus GenAI API access from Claude Code.
+=======
+> 中文简介：SHTUClaudeProxy sunyb 制作的 Windows 图形化本地代理工具，供校内 GenAI API 接入 Claude Code 使用。
+<img width="1630" height="1035" alt="image" src="https://github.com/user-attachments/assets/4a647f90-798b-4eeb-af7f-6361be3951d4" />
+<img width="1195" height="449" alt="image" src="https://github.com/user-attachments/assets/7f9ffe47-b5c1-4a66-ab05-1b6c747335c8" />
+
+>>>>>>> origin/main
 
 ## What It Does
 
