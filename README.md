@@ -379,7 +379,84 @@ v1.6.0 is the zero-install release. It includes:
 
 Windows users should normally download the single-file EXE from the Release page. Linux and macOS support is source-based at this stage.
 
-### GUI Mode
+### 1. Unpack the Source Package
+
+The Linux/macOS prototype source package should unpack into its own directory:
+
+```bash
+unzip SHTUClaudeProxy-source-linux-macos-prototype.zip
+cd SHTUClaudeProxy-source-linux-macos-prototype
+```
+
+Run the smoke test first:
+
+```bash
+python3 -m py_compile app.py cli.py config_store.py gui.py platform_utils.py proxy.py smoke_test.py
+python3 smoke_test.py
+```
+
+Expected output:
+
+```text
+SHTUClaudeProxy smoke test passed
+```
+
+### 2. Configure API Key and Model
+
+Start once to generate `config.json`, or copy from `config.example.json`:
+
+```bash
+python3 cli.py show-config
+cp config.example.json config.json
+```
+
+Edit `config.json` with your editor:
+
+```bash
+nano config.json
+```
+
+At minimum, fill these fields in the model you want to use:
+
+```json
+{
+  "model_id": "GPT-5.5",
+  "base_url": "https://genaiapi.shanghaitech.edu.cn/api/v1/response",
+  "api_key": "PASTE_YOUR_GENAI_API_KEY_HERE",
+  "upstream_model": "GPT-5.5",
+  "api_format": "responses"
+}
+```
+
+Important fields:
+
+- `model_id`: the model name Claude Code will request.
+- `base_url`: the upstream GenAI API endpoint.
+- `api_key`: your GenAI API key. Keep it private.
+- `upstream_model`: the actual upstream model name sent to GenAI API.
+- `api_format`: use `responses` or `chat_completions`.
+
+For Chat Completions-compatible upstreams, use:
+
+```json
+"api_format": "chat_completions"
+```
+
+Model routing is controlled by `model_env`:
+
+```json
+"model_env": {
+  "ANTHROPIC_MODEL": "GPT-5.5",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL": "GPT-5.5",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL": "GPT-5.5",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL": "GPT-5.5",
+  "ANTHROPIC_REASONING_MODEL": "GPT-5.5"
+}
+```
+
+Each value must match one configured `model_id`. They can all be the same, or you can route different Claude roles to different configured models.
+
+### 3. GUI Mode
 
 Run the Tkinter GUI from source:
 
@@ -391,7 +468,7 @@ On Linux servers without a local desktop, use X11 forwarding:
 
 ```bash
 ssh -X user@host
-cd SHTUClaudeProxy
+cd SHTUClaudeProxy-source-linux-macos-prototype
 python3 app.py
 ```
 
@@ -401,23 +478,59 @@ If Tkinter is missing on Linux, install the system package for your distribution
 sudo apt install python3-tk
 ```
 
-### Headless CLI Mode
+### 4. Headless CLI Mode
 
-For Linux servers without GUI or X11 forwarding, use CLI mode:
+For Linux servers without GUI or X11 forwarding, use CLI mode.
+
+Check resolved config:
 
 ```bash
 python3 cli.py show-config
+```
+
+Write Claude Code settings:
+
+```bash
 python3 cli.py write-settings
+```
+
+This updates:
+
+```text
+~/.claude/settings.json
+```
+
+Install a helper launch script:
+
+```bash
 python3 cli.py install-launch-script
+```
+
+This creates:
+
+```text
+~/shtu-claude-proxy/claude-shtu.sh
+```
+
+Start the proxy in one terminal:
+
+```bash
 python3 cli.py serve
 ```
 
-Common workflow:
+In another terminal, launch Claude Code through the helper script:
 
-1. Edit `config.json` or start once to generate it.
-2. Run `python3 cli.py write-settings` to update `~/.claude/settings.json`.
-3. Run `python3 cli.py serve` to start the local proxy.
-4. In another terminal, run `~/shtu-claude-proxy/claude-shtu.sh` or launch `claude` with the printed env variables from `python3 cli.py print-env`.
+```bash
+~/shtu-claude-proxy/claude-shtu.sh
+```
+
+Alternatively, print environment variables and apply them manually:
+
+```bash
+python3 cli.py print-env
+```
+
+Then run `claude` in the same shell after exporting those variables.
 
 ## Run from Source
 
