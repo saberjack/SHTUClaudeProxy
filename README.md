@@ -189,6 +189,8 @@ For each model entry:
 | API Key | Your campus API key | keep private |
 | Upstream Model | Model ID sent to GenAI Response API | GPT-5.5 |
 
+> **Important:** For GPT-5 and newer GPT models, set `API Format` to `responses`.
+
 Click:
 
 ```text
@@ -263,6 +265,8 @@ SHTUClaudeProxy supports two upstream API formats per model:
 | --- | --- | --- |
 | `responses` | OpenAI Responses-style `/response` | `response.output_text.delta` |
 | `chat_completions` | OpenAI Chat Completions-style `/chat/completions` | `choices[0].delta.content` |
+
+> **Important:** GPT-5 and newer GPT models must use `responses`. Use `chat_completions` only for upstream models or endpoints that explicitly require Chat Completions compatibility.
 
 For ShanghaiTech GenAI Chat Completions endpoints, configure a model like this:
 
@@ -472,6 +476,8 @@ Important fields:
 - `api_key`: your GenAI API key. Keep it private.
 - `upstream_model`: the actual upstream model name sent to GenAI API.
 - `api_format`: use `responses` or `chat_completions`.
+
+> **Important:** For GPT-5 and newer GPT models, keep `api_format` as `responses`.
 
 For Chat Completions-compatible upstreams, use:
 
