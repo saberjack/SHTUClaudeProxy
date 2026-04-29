@@ -26,6 +26,13 @@ MODEL_ENV_KEYS = (
 )
 
 
+def strip_model_date_suffix(model_id: str) -> str:
+    prefix, separator, suffix = model_id.rpartition("-")
+    if separator and len(suffix) == 8 and suffix.isdigit():
+        return prefix
+    return model_id
+
+
 @dataclass
 class ModelConfig:
     name: str
@@ -125,13 +132,21 @@ class AppConfig:
         }
 
     def find_model(self, requested_model: Optional[str]) -> ModelConfig:
-        candidates = [requested_model, self.default_model_id]
-        for candidate in candidates:
+        for candidate in (requested_model, self.default_model_id):
             if not candidate:
                 continue
-            for model in self.models:
-                if candidate in (model.model_id, model.name, model.upstream_model):
-                    return model
+            candidates = [candidate]
+            normalized = strip_model_date_suffix(candidate)
+            if normalized != candidate:
+                candidates.append(normalized)
+            for model_candidate in candidates:
+                for model in self.models:
+                    if model_candidate in (model.model_id, model.name):
+                        return model
+            for model_candidate in candidates:
+                for model in self.models:
+                    if model_candidate == model.upstream_model:
+                        return model
         return self.models[0]
 
 
@@ -158,4 +173,3 @@ def save_config(config: AppConfig, path: Optional[Path] = None) -> None:
     target = path or config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(config.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-
