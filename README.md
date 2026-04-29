@@ -1,5 +1,6 @@
 ﻿# SHTUClaudeProxy
 
+GPT系列模型 API Format请使用responses
 Current development version: **v1.9.0**
 
 SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
