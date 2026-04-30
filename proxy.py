@@ -10,8 +10,10 @@ response.output_text.delta events into Anthropic-style SSE events.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -27,6 +29,15 @@ DEFAULT_UPSTREAM_URL = "https://genaiapi.shanghaitech.edu.cn/api/v1/response"
 DEFAULT_MODEL = "GPT-5.5"
 ANTHROPIC_VERSION = "2023-06-01"
 ACTIVE_CONFIG: Optional[AppConfig] = None
+DSML_OPEN_RE = re.compile(r"<\s*[|｜]DSML[|｜](?:tool_calls|invoke|parameter)\b", re.IGNORECASE)
+DSML_CLOSE_RE = re.compile(r"</\s*[|｜]DSML[|｜](?:tool_calls|invoke|parameter)\s*>", re.IGNORECASE)
+DSML_TOOL_CALLS_CLOSE_RE = re.compile(r"</\s*[|｜]DSML[|｜]tool_calls\s*>", re.IGNORECASE)
+DSML_OPEN_PREFIXES = (
+    "<|dsml|tool_calls",
+    "<|dsml|invoke",
+    "<|dsml|parameter",
+)
+DSML_TOOL_CALLS_CLOSE_PREFIXES = ("</|dsml|tool_calls>",)
 
 
 def now_ms() -> int:
@@ -127,6 +138,124 @@ def json_dumps_compact(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False, separators=(",", ":"))
 
 
+def normalize_dsml_marker(text: str) -> str:
+    return text.replace("｜", "|").lower()
+
+
+def partial_dsml_marker_start(text: str, position: int, prefixes: Tuple[str, ...]) -> int:
+    for index in range(len(text) - 1, position - 1, -1):
+        suffix = normalize_dsml_marker(text[index:])
+        if any(prefix.startswith(suffix) and suffix != prefix for prefix in prefixes):
+            return index
+    return -1
+
+
+def estimate_text_tokens(text: str) -> int:
+    if not text:
+        return 0
+    return max(1, (len(text) + 3) // 4)
+
+
+def estimate_value_tokens(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return estimate_text_tokens(value)
+    if isinstance(value, (int, float, bool)):
+        return 1
+    if isinstance(value, list):
+        return sum(estimate_value_tokens(item) for item in value)
+    if isinstance(value, dict):
+        return sum(estimate_text_tokens(str(key)) + estimate_value_tokens(item) for key, item in value.items())
+    return estimate_text_tokens(str(value))
+
+
+def estimate_anthropic_input_tokens(body: Dict[str, Any]) -> int:
+    total = 0
+    total += estimate_value_tokens(body.get("system"))
+    total += estimate_value_tokens(body.get("tools"))
+    for message in body.get("messages", []):
+        if not isinstance(message, dict):
+            continue
+        total += 4
+        total += estimate_text_tokens(str(message.get("role", "")))
+        total += estimate_value_tokens(message.get("content"))
+    return max(1, total)
+
+
+def strip_thinking_markup(text: str) -> str:
+    cleaned = re.sub(r"<think\b[^>]*>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"^\s*</think>\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*<think\b[^>]*>.*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    return cleaned.strip()
+
+
+def strip_markdown_json_fence(text: str) -> str:
+    stripped = text.strip()
+    match = re.fullmatch(r"```(?:json|JSON)?\s*(.*?)\s*```", stripped, flags=re.DOTALL)
+    return match.group(1).strip() if match else stripped
+
+
+def extract_balanced_json(text: str) -> Optional[str]:
+    starts = [index for index in (text.find("{"), text.find("[")) if index >= 0]
+    if not starts:
+        return None
+    start = min(starts)
+    stack: List[str] = []
+    in_string = False
+    escape = False
+    quote = ""
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == quote:
+                in_string = False
+            continue
+        if char in ("'", '"'):
+            in_string = True
+            quote = char
+            continue
+        if char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if not stack or char != stack[-1]:
+                return None
+            stack.pop()
+            if not stack:
+                return text[start:index + 1]
+    return None
+
+
+def quote_unquoted_json_keys(text: str) -> str:
+    return re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)', r'\1"\2"\3', text)
+
+
+def parse_json_like_object(arguments: str) -> Optional[Any]:
+    candidates = []
+    cleaned = strip_markdown_json_fence(strip_thinking_markup(arguments))
+    if cleaned:
+        candidates.append(cleaned)
+    balanced = extract_balanced_json(cleaned or arguments)
+    if balanced and balanced not in candidates:
+        candidates.append(balanced)
+
+    for candidate in candidates:
+        for value in (candidate, quote_unquoted_json_keys(candidate)):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                pass
+            try:
+                return ast.literal_eval(value)
+            except (SyntaxError, ValueError):
+                pass
+    return None
+
+
 def tool_result_content_to_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -135,6 +264,21 @@ def tool_result_content_to_text(content: Any) -> str:
     if content is None:
         return ""
     return str(content)
+
+
+def escape_tool_result_attr(value: Any) -> str:
+    return str(value or "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def anthropic_tool_results_visible_text(tool_results: List[Dict[str, Any]]) -> str:
+    blocks: List[str] = []
+    for result in tool_results:
+        attrs = [f'tool_use_id="{escape_tool_result_attr(result.get("tool_use_id", ""))}"']
+        if "is_error" in result:
+            attrs.append(f'is_error="{str(bool(result.get("is_error"))).lower()}"')
+        content = tool_result_content_to_text(result.get("content", ""))
+        blocks.append(f"<tool_result {' '.join(attrs)}>\n{content}\n</tool_result>")
+    return "<tool_results>\n" + "\n".join(blocks) + "\n</tool_results>" if blocks else ""
 
 
 def anthropic_tools_to_chat_tools(tools: Any) -> List[Dict[str, Any]]:
@@ -233,14 +377,17 @@ def anthropic_message_to_chat_messages(message: Dict[str, Any]) -> List[Dict[str
     text, tool_uses, tool_results = split_anthropic_content(message.get("content", ""))
     if tool_results:
         messages: List[Dict[str, Any]] = []
-        if text:
-            messages.append({"role": "user", "content": text})
         for result in tool_results:
             messages.append({
                 "role": "tool",
                 "tool_call_id": result.get("tool_use_id", ""),
                 "content": tool_result_content_to_text(result.get("content", "")),
             })
+        visible_text = anthropic_tool_results_visible_text(tool_results)
+        if text:
+            visible_text = f"{visible_text}\n\n{text}" if visible_text else text
+        if visible_text:
+            messages.append({"role": "user", "content": visible_text})
         return messages
     if role == "assistant" and tool_uses:
         tool_calls = []
@@ -263,21 +410,25 @@ def anthropic_message_to_responses_items(message: Dict[str, Any]) -> List[Dict[s
         role = "user"
     text, tool_uses, tool_results = split_anthropic_content(message.get("content", ""))
     items: List[Dict[str, Any]] = []
-    if text:
-        items.append({"role": role, "content": text})
-    for tool_use in tool_uses:
-        items.append({
-            "type": "function_call",
-            "call_id": tool_use.get("id", ""),
-            "name": tool_use.get("name", ""),
-            "arguments": json_dumps_compact(tool_use.get("input", {})),
-        })
-    for result in tool_results:
-        items.append({
-            "type": "function_call_output",
-            "call_id": result.get("tool_use_id", ""),
-            "output": tool_result_content_to_text(result.get("content", "")),
-        })
+    if tool_results:
+        for result in tool_results:
+            items.append({
+                "type": "function_call_output",
+                "call_id": result.get("tool_use_id", ""),
+                "output": tool_result_content_to_text(result.get("content", "")),
+            })
+        if text:
+            items.append({"role": role, "content": text})
+    else:
+        if text:
+            items.append({"role": role, "content": text})
+        for tool_use in tool_uses:
+            items.append({
+                "type": "function_call",
+                "call_id": tool_use.get("id", ""),
+                "name": tool_use.get("name", ""),
+                "arguments": json_dumps_compact(tool_use.get("input", {})),
+            })
     if not items:
         items.append({"role": role, "content": ""})
     return items
@@ -320,6 +471,7 @@ def anthropic_messages_to_responses(body: Dict[str, Any], fallback_model: str, u
     tools = anthropic_tools_to_responses_tools(body.get("tools"))
     if tools:
         payload["tools"] = tools
+        payload["parallel_tool_calls"] = False
     tool_choice = anthropic_tool_choice_to_responses(body.get("tool_choice"))
     if tool_choice is not None:
         payload["tool_choice"] = tool_choice
@@ -417,6 +569,32 @@ def iter_sse_lines(response: urllib.response.addinfourl) -> Iterable[Tuple[Optio
             data_lines.append(line[5:].strip())
 
 
+def chat_tool_call_payloads(tool_calls: Any, is_delta: bool) -> List[Dict[str, Any]]:
+    payloads: List[Dict[str, Any]] = []
+    if not isinstance(tool_calls, list):
+        return payloads
+    for tool_call in tool_calls:
+        if not isinstance(tool_call, dict):
+            continue
+        function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+        payloads.append({
+            "id": tool_call.get("id") or "",
+            "index": tool_call.get("index", 0),
+            "name": function.get("name", ""),
+            "arguments": function.get("arguments") or "",
+            "replace_arguments": not is_delta,
+        })
+    return payloads
+
+
+def tool_call_kind_from_payloads(payloads: List[Dict[str, Any]], is_delta: bool) -> Tuple[str, Optional[Dict[str, Any]]]:
+    if not payloads:
+        return "ignore", None
+    if len(payloads) == 1:
+        return ("tool_call_delta" if is_delta else "tool_call"), payloads[0]
+    return ("tool_calls_delta" if is_delta else "tool_calls"), {"tool_calls": payloads}
+
+
 def extract_text_delta(event: Optional[str], data: str) -> Tuple[str, Optional[Dict[str, Any]]]:
     if data == "[DONE]":
         return "done", None
@@ -434,6 +612,7 @@ def extract_text_delta(event: Optional[str], data: str) -> Tuple[str, Optional[D
         if item.get("type") == "function_call":
             return "tool_call", {
                 "id": item.get("call_id") or item.get("id") or f"toolu_proxy_{now_ms()}",
+                "index": obj.get("output_index", item.get("output_index", 0)),
                 "name": item.get("name", ""),
                 "arguments": item.get("arguments", "{}"),
                 "replace_arguments": event_type == "response.output_item.done",
@@ -441,12 +620,14 @@ def extract_text_delta(event: Optional[str], data: str) -> Tuple[str, Optional[D
     if event_type == "response.function_call_arguments.delta":
         return "tool_call_delta", {
             "id": obj.get("call_id") or obj.get("item_id") or "",
+            "index": obj.get("output_index", 0),
             "name": obj.get("name", ""),
             "arguments": obj.get("delta", ""),
         }
     if event_type == "response.function_call_arguments.done":
         return "tool_call", {
             "id": obj.get("call_id") or obj.get("item_id") or f"toolu_proxy_{now_ms()}",
+            "index": obj.get("output_index", 0),
             "name": obj.get("name", ""),
             "arguments": obj.get("arguments", "{}"),
             "replace_arguments": True,
@@ -455,36 +636,32 @@ def extract_text_delta(event: Optional[str], data: str) -> Tuple[str, Optional[D
         response_obj = obj.get("response") if isinstance(obj.get("response"), dict) else obj
         output = response_obj.get("output") if isinstance(response_obj, dict) else None
         if isinstance(output, list):
-            for item in output:
+            tool_payloads: List[Dict[str, Any]] = []
+            for output_index, item in enumerate(output):
                 if isinstance(item, dict) and item.get("type") == "function_call":
-                    return "tool_call", {
+                    tool_payloads.append({
                         "id": item.get("call_id") or item.get("id") or f"toolu_proxy_{now_ms()}",
+                        "index": item.get("output_index", output_index),
                         "name": item.get("name", ""),
                         "arguments": item.get("arguments", "{}"),
                         "replace_arguments": True,
-                    }
+                    })
+            if tool_payloads:
+                return tool_call_kind_from_payloads(tool_payloads, False)
         return "done", obj
 
     choices = obj.get("choices")
     if isinstance(choices, list) and choices:
         choice = choices[0] if isinstance(choices[0], dict) else {}
-        delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else {}
+        delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else None
         message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
-        text = delta.get("content") or message.get("content") or ""
+        text = (delta.get("content") if delta else None) or message.get("content") or ""
         if text:
             return "delta", {"text": text}
-        tool_calls = delta.get("tool_calls") or message.get("tool_calls")
+        is_delta = delta is not None and "tool_calls" in delta
+        tool_calls = delta.get("tool_calls") if is_delta else message.get("tool_calls")
         if isinstance(tool_calls, list) and tool_calls:
-            tool_call = tool_calls[0] if isinstance(tool_calls[0], dict) else {}
-            function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
-            arguments = function.get("arguments") or ""
-            return "tool_call_delta" if delta else "tool_call", {
-                "id": tool_call.get("id") or "",
-                "index": tool_call.get("index", 0),
-                "name": function.get("name", ""),
-                "arguments": arguments,
-                "replace_arguments": not bool(delta),
-            }
+            return tool_call_kind_from_payloads(chat_tool_call_payloads(tool_calls, is_delta), is_delta)
         if choice.get("finish_reason"):
             finish_reason = choice.get("finish_reason")
             return "done", {"finish_reason": finish_reason, "raw": obj}
@@ -496,14 +673,110 @@ def extract_text_delta(event: Optional[str], data: str) -> Tuple[str, Optional[D
 
 def parse_tool_arguments(arguments: Any) -> Dict[str, Any]:
     if isinstance(arguments, dict):
+        if set(arguments) == {"arguments"}:
+            nested_value = arguments.get("arguments")
+            if isinstance(nested_value, dict):
+                return parse_tool_arguments(nested_value)
+            if isinstance(nested_value, str):
+                return parse_tool_arguments(nested_value)
         return arguments
     if not isinstance(arguments, str) or not arguments.strip():
         return {}
-    try:
-        parsed = json.loads(arguments)
-    except json.JSONDecodeError:
+    parsed = parse_json_like_object(arguments)
+    if parsed is None:
         return {"arguments": arguments}
-    return parsed if isinstance(parsed, dict) else {"arguments": parsed}
+    if isinstance(parsed, str):
+        nested = parse_tool_arguments(parsed)
+        return nested if nested else {"arguments": parsed}
+    if isinstance(parsed, dict):
+        return parse_tool_arguments(parsed)
+    return {"arguments": parsed}
+
+
+def tool_arguments_json(arguments: Any) -> str:
+    return json_dumps_compact(parse_tool_arguments(arguments))
+
+
+def filter_thinking_text_delta(text: str, state: Dict[str, Any]) -> str:
+    if not text:
+        return ""
+    pending_open = state.pop("pending_dsml_open", "")
+    pending_close = state.pop("pending_dsml_close", "")
+    if pending_open or pending_close:
+        text = f"{pending_open}{pending_close}{text}"
+    output: List[str] = []
+    position = 0
+    while position < len(text):
+        lower = text.lower()
+        if state.get("in_thinking"):
+            close_index = lower.find("</think>", position)
+            if close_index < 0:
+                return "".join(output)
+            position = close_index + len("</think>")
+            state["in_thinking"] = False
+            continue
+        if state.get("in_dsml"):
+            close_match = DSML_TOOL_CALLS_CLOSE_RE.search(text, position)
+            if not close_match:
+                partial_close = partial_dsml_marker_start(text, position, DSML_TOOL_CALLS_CLOSE_PREFIXES)
+                if partial_close >= 0:
+                    state["pending_dsml_close"] = text[partial_close:]
+                return "".join(output)
+            position = close_match.end()
+            state["in_dsml"] = False
+            continue
+        open_index = lower.find("<think", position)
+        stray_close_index = lower.find("</think>", position)
+        if stray_close_index >= 0 and (open_index < 0 or stray_close_index < open_index):
+            output.append(text[position:stray_close_index])
+            position = stray_close_index + len("</think>")
+            continue
+        dsml_open = DSML_OPEN_RE.search(text, position)
+        dsml_close = DSML_CLOSE_RE.search(text, position)
+        if dsml_close and (not dsml_open or dsml_close.start() < dsml_open.start()):
+            prefix = text[position:dsml_close.start()]
+            if prefix.strip():
+                output.append(prefix)
+            position = dsml_close.end()
+            continue
+        if open_index < 0:
+            if not dsml_open:
+                partial_open = partial_dsml_marker_start(text, position, DSML_OPEN_PREFIXES)
+                if partial_open >= 0:
+                    prefix = text[position:partial_open]
+                    if prefix.strip():
+                        output.append(prefix)
+                    state["pending_dsml_open"] = text[partial_open:]
+                    break
+                output.append(text[position:])
+                break
+            prefix = text[position:dsml_open.start()]
+            if prefix.strip():
+                output.append(prefix)
+            close_match = DSML_TOOL_CALLS_CLOSE_RE.search(text, dsml_open.end())
+            if close_match:
+                position = close_match.end()
+                continue
+            state["in_dsml"] = True
+            break
+        if dsml_open and dsml_open.start() < open_index:
+            prefix = text[position:dsml_open.start()]
+            if prefix.strip():
+                output.append(prefix)
+            close_match = DSML_TOOL_CALLS_CLOSE_RE.search(text, dsml_open.end())
+            if close_match:
+                position = close_match.end()
+                continue
+            state["in_dsml"] = True
+            break
+        output.append(text[position:open_index])
+        tag_end = text.find(">", open_index)
+        if tag_end < 0:
+            state["in_thinking"] = True
+            break
+        position = tag_end + 1
+        state["in_thinking"] = True
+    return "".join(output)
 
 
 def stop_reason_from_done(parsed: Optional[Dict[str, Any]], tool_calls: List[Dict[str, Any]]) -> str:
@@ -515,6 +788,52 @@ def stop_reason_from_done(parsed: Optional[Dict[str, Any]], tool_calls: List[Dic
     if finish_reason in ("length", "max_tokens"):
         return "max_tokens"
     return "end_turn"
+
+
+def compact_jsonish_outside_strings(value: str) -> str:
+    output: List[str] = []
+    in_string = False
+    escape = False
+    quote = ""
+    for char in value:
+        if in_string:
+            output.append(char)
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == quote:
+                in_string = False
+            continue
+        if char in ("'", '"'):
+            in_string = True
+            quote = char
+            output.append(char)
+            continue
+        if char.isspace():
+            continue
+        output.append(char)
+    return "".join(output)
+
+
+def is_cumulative_tool_argument_snapshot(existing: str, incoming: str) -> bool:
+    existing_start = existing.lstrip()[:1]
+    incoming_start = incoming.lstrip()[:1]
+    if existing_start not in ("{", "[") or incoming_start != existing_start:
+        return False
+    return compact_jsonish_outside_strings(incoming).startswith(compact_jsonish_outside_strings(existing))
+
+
+def merge_tool_argument_delta(existing: str, incoming: str) -> str:
+    if not incoming:
+        return existing
+    if not existing:
+        return incoming
+    if incoming == existing:
+        return existing
+    if incoming.startswith(existing) or is_cumulative_tool_argument_snapshot(existing, incoming):
+        return incoming
+    return existing + incoming
 
 
 def merge_tool_call(tool_calls: List[Dict[str, Any]], parsed: Dict[str, Any]) -> None:
@@ -530,7 +849,19 @@ def merge_tool_call(tool_calls: List[Dict[str, Any]], parsed: Dict[str, Any]) ->
     if parsed.get("replace_arguments"):
         target["arguments"] = arguments
     else:
-        target["arguments"] = target.get("arguments", "") + arguments
+        target["arguments"] = merge_tool_argument_delta(target.get("arguments", ""), arguments)
+
+
+def merge_tool_call_payloads(tool_calls: List[Dict[str, Any]], parsed: Optional[Dict[str, Any]]) -> None:
+    if not parsed:
+        return
+    payloads = parsed.get("tool_calls")
+    if isinstance(payloads, list):
+        for payload in payloads:
+            if isinstance(payload, dict):
+                merge_tool_call(tool_calls, payload)
+        return
+    merge_tool_call(tool_calls, parsed)
 
 
 def anthropic_message_id() -> str:
@@ -568,7 +899,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         route_path = self.route_path()
         if route_path in ("/v1/messages/count_tokens", "/messages/count_tokens"):
-            send_json(self, 200, {"input_tokens": 0})
+            try:
+                body = read_json_body(self)
+                input_tokens = estimate_anthropic_input_tokens(body)
+            except Exception:
+                input_tokens = 1
+            send_json(self, 200, {"input_tokens": input_tokens})
             return
         if route_path not in ("/v1/messages", "/messages"):
             send_json(self, 404, {"type": "error", "error": {"type": "not_found_error", "message": "Use /v1/messages"}})
@@ -633,13 +969,15 @@ class ProxyHandler(BaseHTTPRequestHandler):
         text_block_started = False
         text_block_stopped = False
         done_payload: Optional[Dict[str, Any]] = None
+        thinking_state: Dict[str, Any] = {"in_thinking": False}
         try:
             with open_upstream(upstream_payload, auth_token, upstream_url, timeout, model_config.api_format) as response:
                 log(f"upstream connected model={model_config.model_id} format={model_config.api_format} status={getattr(response, 'status', 'unknown')}")
                 for event, data in iter_sse_lines(response):
                     kind, parsed = extract_text_delta(event, data)
                     if kind == "delta":
-                        text = parsed.get("text", "") if parsed else ""
+                        raw_text = parsed.get("text", "") if parsed else ""
+                        text = filter_thinking_text_delta(raw_text, thinking_state)
                         if not text:
                             continue
                         if not text_block_started:
@@ -656,8 +994,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                             "index": 0,
                             "delta": {"type": "text_delta", "text": text},
                         })
-                    elif kind in ("tool_call", "tool_call_delta") and parsed:
-                        merge_tool_call(tool_calls, parsed)
+                    elif kind in ("tool_call", "tool_call_delta", "tool_calls", "tool_calls_delta") and parsed:
+                        merge_tool_call_payloads(tool_calls, parsed)
                     elif kind == "error":
                         write_sse(self, "error", {
                             "type": "error",
@@ -703,7 +1041,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             write_sse(self, "content_block_delta", {
                 "type": "content_block_delta",
                 "index": block_index,
-                "delta": {"type": "input_json_delta", "partial_json": arguments},
+                "delta": {"type": "input_json_delta", "partial_json": tool_arguments_json(arguments)},
             })
             write_sse(self, "content_block_stop", {"type": "content_block_stop", "index": block_index})
         stop_reason = stop_reason_from_done(done_payload, tool_calls)
@@ -721,15 +1059,18 @@ class ProxyHandler(BaseHTTPRequestHandler):
         text_parts: List[str] = []
         tool_calls: List[Dict[str, Any]] = []
         done_payload: Optional[Dict[str, Any]] = None
+        thinking_state: Dict[str, Any] = {"in_thinking": False}
         try:
             with open_upstream(upstream_payload, auth_token, upstream_url, timeout, model_config.api_format) as response:
                 log(f"upstream connected model={model_config.model_id} format={model_config.api_format} status={getattr(response, 'status', 'unknown')}")
                 for event, data in iter_sse_lines(response):
                     kind, parsed = extract_text_delta(event, data)
                     if kind == "delta" and parsed:
-                        text_parts.append(parsed.get("text", ""))
-                    elif kind in ("tool_call", "tool_call_delta") and parsed:
-                        merge_tool_call(tool_calls, parsed)
+                        text = filter_thinking_text_delta(parsed.get("text", ""), thinking_state)
+                        if text:
+                            text_parts.append(text)
+                    elif kind in ("tool_call", "tool_call_delta", "tool_calls", "tool_calls_delta") and parsed:
+                        merge_tool_call_payloads(tool_calls, parsed)
                     elif kind == "error":
                         send_json(self, 502, {
                             "type": "error",
@@ -798,4 +1139,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
