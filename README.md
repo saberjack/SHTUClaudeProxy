@@ -1,6 +1,6 @@
 ﻿# SHTUClaudeProxy
 
-GPT系列模型 API Format请使用responses
+> **Important:** GPT-series models should use the `responses` API Format.
 
 Current development version: **v1.9.0**
 

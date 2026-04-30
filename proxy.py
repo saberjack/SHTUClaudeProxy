@@ -655,13 +655,13 @@ def extract_text_delta(event: Optional[str], data: str) -> Tuple[str, Optional[D
         choice = choices[0] if isinstance(choices[0], dict) else {}
         delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else None
         message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
-        text = (delta.get("content") if delta else None) or message.get("content") or ""
-        if text:
-            return "delta", {"text": text}
         is_delta = delta is not None and "tool_calls" in delta
         tool_calls = delta.get("tool_calls") if is_delta else message.get("tool_calls")
         if isinstance(tool_calls, list) and tool_calls:
             return tool_call_kind_from_payloads(chat_tool_call_payloads(tool_calls, is_delta), is_delta)
+        text = (delta.get("content") if delta else None) or message.get("content") or ""
+        if text:
+            return "delta", {"text": text}
         if choice.get("finish_reason"):
             finish_reason = choice.get("finish_reason")
             return "done", {"finish_reason": finish_reason, "raw": obj}
