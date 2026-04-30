@@ -1,4 +1,26 @@
-﻿# Changelog
+# Changelog
+
+## v2.0.0 - 2026-04-30
+
+Tool-call hardening release for Claude Code compatibility.
+
+### Added
+
+- Broader smoke-test coverage for multiple tool calls, cumulative streamed arguments, model suffix routing, and tool argument repair.
+- Estimated `/count_tokens` responses instead of a fixed zero count.
+
+### Changed
+
+- Hardened Chat Completions and Responses tool-call parsing for streamed and non-streamed upstream responses.
+- Improved `tool_result` ordering and visible fallback context for Chat Completions-compatible upstreams.
+- Claude model routing now accepts common date-suffixed model IDs.
+- GPT-series models are documented to use the `responses` API Format.
+
+### Fixed
+
+- Chat Completions responses that include both `content` and `tool_calls` now prioritize tool calls instead of dropping them.
+- Tool arguments wrapped in JSON strings, markdown fences, thinking tags, or cumulative streamed snapshots are repaired more reliably.
+- Multiple tool calls in one upstream chunk are no longer dropped.
 
 ## v1.9.0 - 2026-04-28
 
@@ -83,8 +105,3 @@ Stable guided-setup release.
 - Moved advanced actions into a separate optional section.
 - Improved non-streaming and streaming upstream error reporting.
 - Updated the release zip with the latest Windows build.
-
-
-
-
-

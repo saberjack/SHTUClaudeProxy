@@ -1,8 +1,8 @@
-﻿# SHTUClaudeProxy
+# SHTUClaudeProxy
 
 > **Important:** GPT-series models should use the `responses` API Format.
 
-Current development version: **v1.9.0**
+Current development version: **v2.0.0**
 
 SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
 
@@ -375,6 +375,17 @@ For Linux/macOS packaging from source, run:
 
 This generates a platform-specific single-file binary and a `.tar.gz` folder package under `release/`.
 
+## Version v2.0.0
+
+v2.0.0 hardens Claude Code tool-call compatibility for Chat Completions and Responses upstreams:
+
+- More robust streamed and non-streamed tool-call parsing.
+- Better handling for multiple tool calls in one response.
+- Safer tool argument repair for wrapped, cumulative, or JSON-like arguments.
+- Improved `tool_result` ordering for Chat Completions compatibility.
+- Claude model routing now accepts common date-suffixed model IDs.
+- GPT-series models should use `responses` API Format.
+
 ## Version v1.9.0
 
 v1.9.0 adds real Claude Code tool-call bridging:
@@ -696,15 +707,3 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
-
-
-
-
-
-
-
-
-
-
-
-
