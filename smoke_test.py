@@ -395,6 +395,8 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
     assert_true('wire_api = "responses"' in text, "codex config must use responses wire API")
     assert_true("requires_openai_auth = true" in text, "codex config must require OpenAI auth")
     assert_true('model_provider = "shtu_proxy"' in text, "codex root model_provider should be set")
+    assert_true('sandbox_mode = "workspace-write"' in text, "codex sandbox_mode should default to workspace-write")
+    assert_true('[features]' in text and 'hooks = true' in text, "codex hooks feature should be enabled")
     assert_true(f'base_url = "http://{config.host}:{config.port}/v1"' in text, "codex config base_url mismatch")
     assert_true('model = "codex-model"' in text, "codex config should use independent Codex model selection")
     auth = json.loads(auth_file.read_text(encoding="utf-8"))
@@ -427,7 +429,10 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
         'requires_openai_auth = true',
         '',
         'stream = false',
+        'sandbox_mode = "read-only"',
         'model_reasoning_effort = "high"',
+        '[features]',
+        'hooks = false',
         '[projects."C:\\\\Users\\\\Administrator"]',
         'trust_level = "trusted"',
         '',
@@ -454,6 +459,8 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
     root_text = repaired[:first_section_index]
     assert_true(root_text.count('model = "codex-model"') == 1, "codex model should be written at TOML root")
     assert_true(root_text.count('model_provider = "shtu_proxy"') == 1, "codex model_provider should be written at TOML root")
+    assert_true('sandbox_mode = "workspace-write"' in root_text, "codex config writer should repair read-only sandbox mode")
+    assert_true('[features]' in repaired and 'hooks = true' in repaired, "codex config writer should enable hooks")
     assert_true('[model_providers.custom]' not in repaired, "codex config writer should remove old direct custom provider")
     assert_true('[tui.model_availability_nux]' not in repaired, "codex config writer should remove stale tui availability sections")
     assert_true("[model_providers.shtu_proxy]" in repaired, "codex config writer should recover with a clean proxy config")
@@ -487,6 +494,25 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
     cli.write_codex_files(default_config)
     qwen_text = Path(default_config.codex_config_path).read_text(encoding="utf-8")
     assert_true('model = "qwen-instruct"' in qwen_text, "Codex setup should allow switching to qwen-instruct")
+
+    case_config = make_config(tmpdir / "case_sensitive")
+    case_config.codex_config_path = str(tmpdir / "case_sensitive" / "config.toml")
+    case_config.codex_auth_path = str(tmpdir / "case_sensitive" / "auth.json")
+    case_file = Path(case_config.codex_config_path)
+    case_file.parent.mkdir(parents=True, exist_ok=True)
+    mixed_case_header = '[projects."C:\\\\Users\\\\Administrator\\\\MyCaseSensitiveSandbox"]'
+    literal_case_header = "[projects.'D:\\Work\\MixedCaseProject']"
+    case_file.write_text("\n".join([
+        'model = "old"',
+        mixed_case_header,
+        'trust_level = "trusted"',
+        literal_case_header,
+        'trust_level = "trusted"',
+    ]), encoding="utf-8")
+    cli.write_codex_files(case_config)
+    case_text = case_file.read_text(encoding="utf-8")
+    assert_true(mixed_case_header in case_text, "Codex writer must preserve project path case and quoted header form")
+    assert_true(literal_case_header in case_text, "Codex writer must preserve literal project path case")
 
 
 def exercise_multi_tool_call_delta() -> None:

@@ -50,6 +50,11 @@ def validate_codex_config(text: str) -> None:
         raise ValueError("Codex root model_provider was not written correctly")
     if not isinstance(parsed.get("model"), str) or not parsed.get("model"):
         raise ValueError("Codex root model was not written correctly")
+    if parsed.get("sandbox_mode") != "workspace-write":
+        raise ValueError("Codex sandbox_mode must be workspace-write")
+    features = parsed.get("features", {})
+    if not isinstance(features, dict) or features.get("hooks") is not True:
+        raise ValueError("Codex features.hooks must be enabled")
     provider = parsed.get("model_providers", {}).get("shtu_proxy", {})
     if "env_key" in provider:
         raise ValueError("Codex shtu_proxy provider should use auth.json instead of requiring an environment variable")
@@ -72,6 +77,7 @@ def codex_root_config_block(config: AppConfig) -> str:
     return "\n".join([
         f'model = "{codex_model}"',
         f'model_provider = "{provider}"',
+        'sandbox_mode = "workspace-write"',
         "",
     ])
 
@@ -94,6 +100,37 @@ def codex_provider_profile_block(config: AppConfig) -> str:
     ])
 
 
+def is_toml_section_header(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("[") and stripped.endswith("]")
+
+
+def is_codex_projects_header(line: str) -> bool:
+    stripped = line.strip()
+    if not is_toml_section_header(stripped):
+        return False
+    inner = stripped.strip("[]").strip()
+    return inner == "projects" or inner.startswith("projects.")
+
+
+def codex_preserved_project_blocks(existing: str) -> str:
+    lines = existing.splitlines()
+    blocks: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not is_codex_projects_header(line):
+            index += 1
+            continue
+        block: list[str] = [line]
+        index += 1
+        while index < len(lines) and not is_toml_section_header(lines[index]):
+            block.append(lines[index])
+            index += 1
+        blocks.append("\n".join(block).rstrip())
+    return "\n\n".join(block for block in blocks if block.strip())
+
+
 def codex_preserved_config_block(existing: str) -> str:
     try:
         parsed = tomllib.loads(existing) if existing.strip() else {}
@@ -109,21 +146,23 @@ def codex_preserved_config_block(existing: str) -> str:
     ):
         if key in parsed:
             lines.append(f"{key} = {json.dumps(parsed[key]) if isinstance(parsed[key], str) else str(parsed[key]).lower()}")
+    features = parsed.get("features") if isinstance(parsed.get("features"), dict) else {}
+    feature_values = dict(features)
+    feature_values["hooks"] = True
+    lines.append("")
+    lines.append("[features]")
+    for key, value in feature_values.items():
+        lines.append(f"{key} = {json.dumps(value) if isinstance(value, str) else str(value).lower()}")
     windows = parsed.get("windows") if isinstance(parsed.get("windows"), dict) else {}
     if windows:
         lines.append("")
         lines.append("[windows]")
         for key, value in windows.items():
             lines.append(f"{key} = {json.dumps(value) if isinstance(value, str) else str(value).lower()}")
-    projects = parsed.get("projects") if isinstance(parsed.get("projects"), dict) else {}
-    for path, values in projects.items():
-        if not isinstance(values, dict):
-            continue
+    project_blocks = codex_preserved_project_blocks(existing)
+    if project_blocks:
         lines.append("")
-        escaped_path = str(path).replace("'", "\\'")
-        lines.append(f"[projects.'{escaped_path}']")
-        for key, value in values.items():
-            lines.append(f"{key} = {json.dumps(value) if isinstance(value, str) else str(value).lower()}")
+        lines.append(project_blocks)
     return "\n".join(lines).strip()
 
 

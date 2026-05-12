@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2.21 - 2026-05-12
+
+Codex sandbox path case preservation release.
+
+### Fixed
+
+- Preserved original `[projects...]` TOML table headers exactly when rewriting Codex `config.toml`, including path case and quoting style.
+- Added regression coverage for mixed-case sandbox/project paths so Codex authorization path matching is not broken by config rewrites.
+
 ## v3.2.20 - 2026-05-12
 
 Dual-client tool-chain validation release.
