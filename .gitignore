@@ -47,6 +47,10 @@ backups/
 # Versioned local release binaries are uploaded as GitHub Release assets,
 # not committed to git history.
 release/*.exe
+release/SHTUClaudeProxy-v*-windows-x64.zip
+release/SHTUClaudeProxy-v*-source-linux-macos.zip
+release/README-release-v*.txt
+release/SHA256SUMS.txt
 
 # Cross-platform source bundles
 release/SHTUClaudeProxy-source-*.zip

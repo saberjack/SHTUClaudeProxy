@@ -2,11 +2,11 @@
 
 > **Important:** GPT-series models should use the `responses` API Format.
 
-Current development version: **v3.2.22**
+Current development version: **v3.2.23**
 
 SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code**, **Codex CLI**, and **Codex Desktop** to the ShanghaiTech University campus **GenAI Response API** or compatible local model endpoints.
 
-This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It helps users access Claude Code through the university GenAI API by translating Claude Code's Anthropic Messages API traffic into upstream requests and converting streaming responses back into Claude Code-compatible Server-Sent Events. v3.2.22 also exposes an OpenAI Responses-compatible `/v1/responses` endpoint for Codex clients.
+This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It helps users access Claude Code through the university GenAI API by translating Claude Code's Anthropic Messages API traffic into upstream requests and converting streaming responses back into Claude Code-compatible Server-Sent Events. v3.2.23 also exposes an OpenAI Responses-compatible `/v1/responses` endpoint for Codex clients.
 
 > Note: SHTUClaudeProxy is a local proxy tool created by sunyb for ShanghaiTech campus GenAI API access from Claude Code.
 
@@ -170,7 +170,7 @@ For Codex CLI/Desktop, install and sign in to Codex separately. SHTUClaudeProxy 
 Recommended download for normal users:
 
 ```text
-SHTUClaudeProxy-v3.2.22-windows-x64.exe
+SHTUClaudeProxy-v3.2.23-windows-x64.exe
 ```
 
 Double-click it directly. No Python installation is required.
@@ -178,7 +178,7 @@ Double-click it directly. No Python installation is required.
 Alternative portable zip package:
 
 ```text
-SHTUClaudeProxy-windows-x64.zip
+SHTUClaudeProxy-v3.2.23-windows-x64.zip
 ```
 
 If you use the zip package, extract the whole folder and run `SHTUClaudeProxy.exe` inside it.
@@ -390,7 +390,7 @@ The GUI writes both files for you in `Codex CLI/Desktop` mode. It uses the selec
 
 Codex MCP servers are configured in Codex itself, not in SHTUClaudeProxy. The proxy only sees the model-facing Responses request that Codex produces after loading MCP tools.
 
-Supported v3.2.22 tool flow:
+Supported v3.2.23 tool flow:
 
 ```text
 Codex MCP server

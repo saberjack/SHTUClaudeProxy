@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.2.23 - 2026-05-12
+
+Release packaging consistency update.
+
+### Changed
+
+- Restored the full five-asset release packaging convention: Windows single-file EXE, Windows portable ZIP, Linux/macOS source ZIP, release README, and SHA256 checksums.
+- Versioned the Windows portable ZIP asset so each GitHub release contains self-contained package names.
+
+### Security
+
+- Source release packaging only copies git-tracked files and excludes local config files, API keys, backups, probe outputs, and build directories.
+
 ## v3.2.22 - 2026-05-12
 
 Codex Windows shell compatibility release.

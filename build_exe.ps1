@@ -1,4 +1,4 @@
-﻿param(
+param(
   [switch]$InstallDeps,
   [switch]$OneDirOnly,
   [switch]$OneFileOnly
@@ -21,6 +21,13 @@ if ($InstallDeps) {
 
 New-Item -ItemType Directory -Force "$Root\release" | Out-Null
 
+$ReleaseName = "SHTUClaudeProxy-v$Version"
+$OneFileName = "$ReleaseName-windows-x64"
+$OneDirZip = "$Root\release\$OneFileName.zip"
+$SourceZip = "$Root\release\$ReleaseName-source-linux-macos.zip"
+$ReleaseReadme = "$Root\release\README-release-v$Version.txt"
+$Checksums = "$Root\release\SHA256SUMS.txt"
+
 if (-not $OneFileOnly) {
   python -m PyInstaller `
     --noconfirm `
@@ -34,16 +41,15 @@ if (-not $OneFileOnly) {
 
   Compress-Archive `
     -Path "$Root\dist\SHTUClaudeProxy\*" `
-    -DestinationPath "$Root\release\SHTUClaudeProxy-windows-x64.zip" `
+    -DestinationPath $OneDirZip `
     -Force
 
   Write-Host ""
   Write-Host "Folder build complete: $Root\dist\SHTUClaudeProxy\SHTUClaudeProxy.exe"
-  Write-Host "Zip package complete: $Root\release\SHTUClaudeProxy-windows-x64.zip"
+  Write-Host "Zip package complete: $OneDirZip"
 }
 
 if (-not $OneDirOnly) {
-  $OneFileName = "SHTUClaudeProxy-v$Version-windows-x64"
   python -m PyInstaller `
     --noconfirm `
     --clean `
@@ -62,6 +68,68 @@ if (-not $OneDirOnly) {
 
   Write-Host ""
   Write-Host "Single-file build complete: $Root\release\$OneFileName.exe"
+}
+
+if (-not $OneDirOnly -and -not $OneFileOnly) {
+  $SourceStageRoot = "$Root\build\source-package"
+  $SourceStage = "$SourceStageRoot\$ReleaseName-source"
+  if (Test-Path $SourceStageRoot) {
+    Remove-Item $SourceStageRoot -Recurse -Force
+  }
+  New-Item -ItemType Directory -Force $SourceStage | Out-Null
+
+  $TrackedFiles = git -C $Root ls-files
+  foreach ($RelativePath in $TrackedFiles) {
+    if ($RelativePath -match '^(release|build|dist)/') { continue }
+    if ($RelativePath -match '(^|/)(config\.json|\.env|auth\.json)$') { continue }
+    if ($RelativePath -match '\.(bak|key|pem)$') { continue }
+
+    $SourcePath = Join-Path $Root $RelativePath
+    $DestPath = Join-Path $SourceStage $RelativePath
+    $DestDir = Split-Path -Parent $DestPath
+    New-Item -ItemType Directory -Force $DestDir | Out-Null
+    Copy-Item $SourcePath $DestPath -Force
+  }
+
+  Compress-Archive `
+    -Path $SourceStage `
+    -DestinationPath $SourceZip `
+    -Force
+
+  @(
+    "SHTUClaudeProxy v$Version release assets",
+    "",
+    "Recommended Windows package:",
+    "- $OneFileName.exe",
+    "",
+    "Portable Windows folder package:",
+    "- $OneFileName.zip",
+    "",
+    "Linux/macOS source package:",
+    "- $ReleaseName-source-linux-macos.zip",
+    "",
+    "Integrity checks:",
+    "- SHA256SUMS.txt",
+    "",
+    "This release package excludes local config files, API keys, backups, probe outputs, and build directories."
+  ) | Set-Content -Path $ReleaseReadme -Encoding UTF8
+
+  $ChecksumFiles = @(
+    "$Root\release\$OneFileName.exe",
+    $OneDirZip,
+    $SourceZip,
+    $ReleaseReadme
+  )
+  $ChecksumLines = foreach ($File in $ChecksumFiles) {
+    $Hash = Get-FileHash -Algorithm SHA256 $File
+    "$($Hash.Hash.ToLowerInvariant())  $(Split-Path -Leaf $File)"
+  }
+  $ChecksumLines | Set-Content -Path $Checksums -Encoding ASCII
+
+  Write-Host ""
+  Write-Host "Source package complete: $SourceZip"
+  Write-Host "Release README complete: $ReleaseReadme"
+  Write-Host "Checksums complete: $Checksums"
 }
 
 Write-Host ""
