@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.2.24 - 2026-05-13
+
+Codex sandbox configuration release.
+
+### Added
+
+- Added a Codex Sandbox selector next to Codex Model with `read-only`, `workspace-write`, and `danger-full-access` options.
+
+### Fixed
+
+- Migrated deprecated `[features].codex_hooks` to `[features].hooks` and removed stale `codex_hooks` entries during config rewrites.
+- Preserved idempotent Codex config writes so repeated Save Config, Write Client Config, or Save + Connect clicks do not duplicate root keys, feature flags, provider blocks, or profiles.
+
 ## v3.2.23 - 2026-05-12
 
 Release packaging consistency update.

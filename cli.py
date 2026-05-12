@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 from typing import Dict
 
-from config_store import AppConfig, MODEL_ENV_KEYS, config_path, ensure_builtin_model_routes, load_config, save_config
+from config_store import AppConfig, CODEX_SANDBOX_MODES, DEFAULT_CODEX_SANDBOX_MODE, MODEL_ENV_KEYS, config_path, ensure_builtin_model_routes, load_config, save_config
 from platform_utils import launch_script_filename, launch_script_text
 from proxy import ProxyHandler, ThreadingHTTPServer
 from safe_io import atomic_write_text, backup_existing_file
@@ -50,11 +50,13 @@ def validate_codex_config(text: str) -> None:
         raise ValueError("Codex root model_provider was not written correctly")
     if not isinstance(parsed.get("model"), str) or not parsed.get("model"):
         raise ValueError("Codex root model was not written correctly")
-    if parsed.get("sandbox_mode") != "workspace-write":
-        raise ValueError("Codex sandbox_mode must be workspace-write")
+    if parsed.get("sandbox_mode") not in CODEX_SANDBOX_MODES:
+        raise ValueError("Codex sandbox_mode must be a supported Codex sandbox mode")
     features = parsed.get("features", {})
     if not isinstance(features, dict) or features.get("hooks") is not True:
         raise ValueError("Codex features.hooks must be enabled")
+    if "codex_hooks" in features:
+        raise ValueError("Codex features.codex_hooks is deprecated; use features.hooks")
     windows = parsed.get("windows", {})
     if os.name == "nt" and (not isinstance(windows, dict) or windows.get("sandbox") != "elevated"):
         raise ValueError("Codex windows.sandbox must be elevated on Windows")
@@ -77,10 +79,13 @@ def codex_config_block(config: AppConfig) -> str:
 def codex_root_config_block(config: AppConfig) -> str:
     provider = "shtu_proxy"
     codex_model = getattr(config, "codex_model_id", "") or config.default_model_id
+    sandbox_mode = getattr(config, "codex_sandbox_mode", DEFAULT_CODEX_SANDBOX_MODE)
+    if sandbox_mode not in CODEX_SANDBOX_MODES:
+        sandbox_mode = DEFAULT_CODEX_SANDBOX_MODE
     return "\n".join([
         f'model = "{codex_model}"',
         f'model_provider = "{provider}"',
-        'sandbox_mode = "workspace-write"',
+        f'sandbox_mode = "{sandbox_mode}"',
         "",
     ])
 
@@ -151,6 +156,7 @@ def codex_preserved_config_block(existing: str) -> str:
             lines.append(f"{key} = {json.dumps(parsed[key]) if isinstance(parsed[key], str) else str(parsed[key]).lower()}")
     features = parsed.get("features") if isinstance(parsed.get("features"), dict) else {}
     feature_values = dict(features)
+    feature_values.pop("codex_hooks", None)
     feature_values["hooks"] = True
     lines.append("")
     lines.append("[features]")

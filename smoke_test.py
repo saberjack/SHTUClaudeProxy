@@ -43,6 +43,7 @@ def make_config(tmpdir: Path) -> AppConfig:
         port=18082,
         default_model_id="smoke-model",
         codex_model_id="smoke-model",
+        codex_sandbox_mode="workspace-write",
         model_env={key: "smoke-model" for key in MODEL_ENV_KEYS},
         timeout=30,
         claude_path="claude",
@@ -273,6 +274,7 @@ def exercise_model_suffix_routing() -> None:
         port=18082,
         default_model_id="chatglm",
         codex_model_id="deepseek-pro",
+        codex_sandbox_mode="workspace-write",
         model_env={key: "chatglm" for key in MODEL_ENV_KEYS},
         timeout=30,
         claude_path="claude",
@@ -398,6 +400,7 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
     )
     config.models.append(codex_model)
     config.codex_model_id = "codex-model"
+    config.codex_sandbox_mode = "workspace-write"
     config_file, auth_file = cli.write_codex_files(config)
     text = config_file.read_text(encoding="utf-8")
     assert_true("env_key" not in text, "codex provider should use auth.json instead of requiring an environment variable")
@@ -406,6 +409,7 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
     assert_true('model_provider = "shtu_proxy"' in text, "codex root model_provider should be set")
     assert_true('sandbox_mode = "workspace-write"' in text, "codex sandbox_mode should default to workspace-write")
     assert_true('[features]' in text and 'hooks = true' in text, "codex hooks feature should be enabled")
+    assert_true("codex_hooks" not in text, "deprecated codex_hooks should not be written")
     if os.name == "nt":
         assert_true('[windows]' in text and 'sandbox = "elevated"' in text, "codex windows sandbox should be elevated on Windows")
     assert_true(f'base_url = "http://{config.host}:{config.port}/v1"' in text, "codex config base_url mismatch")
@@ -443,6 +447,7 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
         'sandbox_mode = "read-only"',
         'model_reasoning_effort = "high"',
         '[features]',
+        'codex_hooks = true',
         'hooks = false',
         '[windows]',
         'sandbox = "read-only"',
@@ -474,11 +479,26 @@ def exercise_codex_config_writer(tmpdir: Path) -> None:
     assert_true(root_text.count('model_provider = "shtu_proxy"') == 1, "codex model_provider should be written at TOML root")
     assert_true('sandbox_mode = "workspace-write"' in root_text, "codex config writer should repair read-only sandbox mode")
     assert_true('[features]' in repaired and 'hooks = true' in repaired, "codex config writer should enable hooks")
+    assert_true("codex_hooks" not in repaired, "codex config writer should remove deprecated codex_hooks")
     if os.name == "nt":
         assert_true('[windows]' in repaired and 'sandbox = "elevated"' in repaired, "codex config writer should repair Windows sandbox mode")
     assert_true('[model_providers.custom]' not in repaired, "codex config writer should remove old direct custom provider")
     assert_true('[tui.model_availability_nux]' not in repaired, "codex config writer should remove stale tui availability sections")
     assert_true("[model_providers.shtu_proxy]" in repaired, "codex config writer should recover with a clean proxy config")
+
+    once_repaired = repaired
+    cli.write_codex_files(config)
+    twice_repaired = config_file.read_text(encoding="utf-8")
+    assert_true(twice_repaired == once_repaired, "repeated Codex config writes should be idempotent")
+
+    for sandbox_mode in ("read-only", "workspace-write", "danger-full-access"):
+        config.codex_sandbox_mode = sandbox_mode
+        cli.write_codex_files(config)
+        sandbox_text = config_file.read_text(encoding="utf-8")
+        sandbox_root = sandbox_text[:sandbox_text.index("[")]
+        assert_true(f'sandbox_mode = "{sandbox_mode}"' in sandbox_root, f"Codex sandbox_mode should support {sandbox_mode}")
+        assert_true(sandbox_root.count("sandbox_mode =") == 1, "Codex sandbox_mode should not duplicate")
+    config.codex_sandbox_mode = "workspace-write"
 
     before_invalid_attempt = config_file.read_text(encoding="utf-8")
     with patch("cli.codex_provider_profile_block", return_value='[profiles.shtu_proxy]\nmodel_provider = "other"\n'):

@@ -12,7 +12,7 @@ from typing import Optional
 
 import proxy
 import cli
-from config_store import AppConfig, DEFAULT_API_FORMAT, DEFAULT_CHAT_COMPLETIONS_URL, DEFAULT_RESPONSES_URL, MODEL_ENV_KEYS, ModelConfig, config_path, default_claude_path, default_claude_settings_path, load_config, portable_claude_path, portable_settings_path, save_config
+from config_store import AppConfig, CODEX_SANDBOX_MODES, DEFAULT_API_FORMAT, DEFAULT_CHAT_COMPLETIONS_URL, DEFAULT_RESPONSES_URL, MODEL_ENV_KEYS, ModelConfig, config_path, default_claude_path, default_claude_settings_path, load_config, portable_claude_path, portable_settings_path, save_config
 from platform_utils import default_codex_auth_path, default_codex_config_path, is_windows, launch_claude, launch_script_filename, launch_script_text, portable_codex_auth_path, portable_codex_config_path
 
 
@@ -32,6 +32,7 @@ class ProxyApp(tk.Tk):
         self.port_var = tk.StringVar(value=str(self.config_data.port))
         self.default_model_var = tk.StringVar(value=self.config_data.default_model_id)
         self.codex_model_var = tk.StringVar(value=self.config_data.codex_model_id)
+        self.codex_sandbox_mode_var = tk.StringVar(value=self.config_data.codex_sandbox_mode)
         self.timeout_var = tk.StringVar(value=str(self.config_data.timeout))
         self.claude_path_var = tk.StringVar(value=self.config_data.claude_path)
         self.claude_settings_path_var = tk.StringVar(value=self.config_data.claude_settings_path)
@@ -219,7 +220,9 @@ class ProxyApp(tk.Tk):
         self.codex_model_combo = ttk.Combobox(codex_cell, textvariable=self.codex_model_var, state="readonly", width=24)
         self.codex_model_combo.grid(row=0, column=1, sticky="w")
         self.codex_model_combo.bind("<<ComboboxSelected>>", self.on_codex_model_changed)
-        ttk.Label(codex_cell, text="Used for Codex config.toml profile and auth.json API key selection.", style="Hint.TLabel").grid(row=0, column=2, padx=8, sticky="w")
+        ttk.Label(codex_cell, text="Sandbox").grid(row=0, column=2, padx=(16, 8), sticky="w")
+        ttk.Combobox(codex_cell, textvariable=self.codex_sandbox_mode_var, values=CODEX_SANDBOX_MODES, state="readonly", width=20).grid(row=0, column=3, sticky="w")
+        ttk.Label(codex_cell, text="Writes Codex model, auth key, sandbox_mode, and hooks.", style="Hint.TLabel").grid(row=0, column=4, padx=8, sticky="w")
         ttk.Label(env_frame, textvariable=self.route_summary_var, style="StepTitle.TLabel").grid(row=3, column=0, columnspan=5, padx=8, pady=(2, 6), sticky="w")
 
         body = ttk.Frame(root)
@@ -535,6 +538,9 @@ class ProxyApp(tk.Tk):
         self.config_data.model_env = self.selected_model_env()
         self.config_data.default_model_id = self.config_data.model_env["ANTHROPIC_MODEL"]
         self.config_data.codex_model_id = self.selected_codex_model_id()
+        sandbox_mode = self.codex_sandbox_mode_var.get().strip()
+        self.config_data.codex_sandbox_mode = sandbox_mode if sandbox_mode in CODEX_SANDBOX_MODES else "workspace-write"
+        self.codex_sandbox_mode_var.set(self.config_data.codex_sandbox_mode)
         self.config_data.timeout = timeout
         self.config_data.claude_path = portable_claude_path(self.claude_path_var.get().strip() or default_claude_path())
         self.config_data.claude_settings_path = portable_settings_path(self.claude_settings_path_var.get().strip() or default_claude_settings_path())

@@ -19,6 +19,8 @@ DEFAULT_CHAT_COMPLETIONS_URL = "https://genaiapi.shanghaitech.edu.cn/api/v1/star
 DEFAULT_UPSTREAM_URL = DEFAULT_RESPONSES_URL
 DEFAULT_API_FORMAT = "responses"
 DEFAULT_MODEL_ID = "GPT-5.5"
+CODEX_SANDBOX_MODES = ("read-only", "workspace-write", "danger-full-access")
+DEFAULT_CODEX_SANDBOX_MODE = "workspace-write"
 MODEL_ENV_KEYS = (
     "ANTHROPIC_MODEL",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL",
@@ -73,6 +75,7 @@ class AppConfig:
     port: int
     default_model_id: str
     codex_model_id: str
+    codex_sandbox_mode: str
     model_env: Dict[str, str]
     timeout: int
     claude_path: str
@@ -88,6 +91,7 @@ class AppConfig:
             port=DEFAULT_PORT,
             default_model_id=DEFAULT_MODEL_ID,
             codex_model_id=DEFAULT_MODEL_ID,
+            codex_sandbox_mode=DEFAULT_CODEX_SANDBOX_MODE,
             model_env={key: DEFAULT_MODEL_ID for key in MODEL_ENV_KEYS},
             timeout=300,
             claude_path=default_claude_path(),
@@ -112,6 +116,9 @@ class AppConfig:
         models = [ModelConfig.from_dict(item) for item in data.get("models", []) if isinstance(item, dict)]
         default_model_id = str(data.get("default_model_id") or (models[0].model_id if models else default.default_model_id)).strip()
         codex_model_id = str(data.get("codex_model_id") or default_model_id).strip()
+        codex_sandbox_mode = str(data.get("codex_sandbox_mode") or default.codex_sandbox_mode).strip()
+        if codex_sandbox_mode not in CODEX_SANDBOX_MODES:
+            codex_sandbox_mode = default.codex_sandbox_mode
         raw_model_env = data.get("model_env") if isinstance(data.get("model_env"), dict) else {}
         model_env = {
             key: str(raw_model_env.get(key) or default_model_id).strip()
@@ -122,6 +129,7 @@ class AppConfig:
             port=int(data.get("port") or default.port),
             default_model_id=default_model_id,
             codex_model_id=codex_model_id,
+            codex_sandbox_mode=codex_sandbox_mode,
             model_env=model_env,
             timeout=int(data.get("timeout") or default.timeout),
             claude_path=portable_claude_path(str(data.get("claude_path") or default.claude_path)),
@@ -137,6 +145,7 @@ class AppConfig:
             "port": self.port,
             "default_model_id": self.default_model_id,
             "codex_model_id": self.codex_model_id,
+            "codex_sandbox_mode": self.codex_sandbox_mode,
             "model_env": self.model_env,
             "timeout": self.timeout,
             "claude_path": self.claude_path,
