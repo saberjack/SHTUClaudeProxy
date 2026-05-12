@@ -38,6 +38,20 @@ DSML_OPEN_PREFIXES = (
     "<|dsml|parameter",
 )
 DSML_TOOL_CALLS_CLOSE_PREFIXES = ("</|dsml|tool_calls>",)
+PSEUDO_FUNCTION_RE = re.compile(r"<function\b[^>]*>(.*?)</function>", re.IGNORECASE | re.DOTALL)
+PSEUDO_PARAM_RE = re.compile(r"<param\s+name=[\"']([^\"']+)[\"']\s*>(.*?)</param>", re.IGNORECASE | re.DOTALL)
+PSEUDO_CALL_RE = re.compile(r"<call\b([^>]*)>(.*?)</call>", re.IGNORECASE | re.DOTALL)
+PSEUDO_ATTR_RE = re.compile(r"([A-Za-z_][\w.-]*)\s*=\s*([\"'])(.*?)\2", re.DOTALL)
+PSEUDO_READ_FILE_RE = re.compile(r"<read_file\b([^>]*)/?>", re.IGNORECASE | re.DOTALL)
+PSEUDO_EXEC_COMMAND_RE = re.compile(r"<exec_command\b[^>]*>(.*?)</exec_command>", re.IGNORECASE | re.DOTALL)
+PSEUDO_COMMAND_RE = re.compile(r"<command\b[^>]*>(.*?)</command>", re.IGNORECASE | re.DOTALL)
+PSEUDO_INVOKE_RE = re.compile(r"<invoke\b[^>]*>(.*?)</invoke>", re.IGNORECASE | re.DOTALL)
+PSEUDO_TOOL_RE = re.compile(r"<tool\b[^>]*>(.*?)</tool>", re.IGNORECASE | re.DOTALL)
+PSEUDO_SHELL_RE = re.compile(r"<shell\b[^>]*>(.*?)</shell>", re.IGNORECASE | re.DOTALL)
+PSEUDO_TOOL_INVOKE_RE = re.compile(r"<tool_invoke\b([^>]*)>(.*?)</tool_invoke>", re.IGNORECASE | re.DOTALL)
+PSEUDO_PARAMETER_RE = re.compile(r"<parameter\s+name=[\"']([^\"']+)[\"'][^>]*>(.*?)</parameter>", re.IGNORECASE | re.DOTALL)
+PSEUDO_TOOL_RESULTS_RE = re.compile(r"<tool_results\b[^>]*>.*?</tool_results>", re.IGNORECASE | re.DOTALL)
+PSEUDO_TOOL_CALL_PLAN_RE = re.compile(r"<tool_call\b[^>]*>.*?</tool_update>", re.IGNORECASE | re.DOTALL)
 
 
 def now_ms() -> int:
@@ -46,6 +60,153 @@ def now_ms() -> int:
 
 def log(message: str) -> None:
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", file=sys.stderr, flush=True)
+
+
+def strip_tags(value: str) -> str:
+    return re.sub(r"<[^>]+>", "", value).strip()
+
+
+def parse_pseudo_attributes(value: str) -> Dict[str, str]:
+    return {name: raw.strip() for name, _, raw in PSEUDO_ATTR_RE.findall(value)}
+
+
+def best_tool_name(requested_name: str, arguments: Dict[str, Any], tool_names: List[str], preferred_shell: Optional[str]) -> str:
+    if requested_name in tool_names:
+        return requested_name
+    lowered = requested_name.lower()
+    if lowered in ("shell", "bash", "exec", "run_command", "shell_exec", "exec_command", "execute_command") and preferred_shell:
+        return preferred_shell
+    if preferred_shell and ("command" in arguments or "path" in arguments or "text" in arguments or lowered in ("send_input", "read_file", "list_dir")):
+        return preferred_shell
+    if len(tool_names) == 1:
+        return tool_names[0]
+    return requested_name or "tool"
+
+
+def coerce_pseudo_arguments(tool_name: str, arguments: Dict[str, Any], preferred_shell: Optional[str]) -> Dict[str, Any]:
+    if tool_name == preferred_shell:
+        if "command" not in arguments:
+            path = str(arguments.get("path") or "").strip()
+            text = str(arguments.get("text") or "").strip()
+            candidate = path or text
+            path_match = re.search(r"[A-Za-z]:\\[^\r\n\"']+", candidate)
+            if path_match:
+                path = path_match.group(0).strip()
+            if path:
+                arguments = {"command": f"Get-Content -Path {json.dumps(path, ensure_ascii=False)} -Raw"}
+        command = arguments.get("command")
+        if isinstance(command, str):
+            arguments = dict(arguments)
+            arguments["command"] = ["powershell.exe", "-Command", command]
+    return arguments
+
+
+def parse_pseudo_function_calls(text: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, List[Dict[str, Any]]]:
+    lowered_text = text.lower()
+    if "<function" not in lowered_text and "<call" not in lowered_text and "<read_file" not in lowered_text and "<exec_command" not in lowered_text and "<invoke" not in lowered_text and "<shell" not in lowered_text and "<tool_invoke" not in lowered_text and "<tool_results" not in lowered_text and "<tool_call" not in lowered_text:
+        return text, []
+    tool_names = []
+    for tool in tools or []:
+        if isinstance(tool, dict) and tool.get("type") == "function":
+            if isinstance(tool.get("function"), dict):
+                name = tool["function"].get("name")
+            else:
+                name = tool.get("name")
+            if isinstance(name, str) and name:
+                tool_names.append(name)
+    preferred_shell = next((name for name in tool_names if name.lower() in ("shell", "bash", "exec", "run_command")), None)
+    calls: List[Dict[str, Any]] = []
+
+    def append_call(name: str, arguments: Dict[str, Any]) -> None:
+        tool_name = best_tool_name(name, arguments, tool_names, preferred_shell)
+        arguments = coerce_pseudo_arguments(tool_name, arguments, preferred_shell)
+        calls.append({
+            "id": f"call_proxy_{now_ms()}_{len(calls)}",
+            "index": len(calls),
+            "name": tool_name,
+            "arguments": json_dumps_compact(arguments),
+            "replace_arguments": True,
+        })
+
+    def replace_function(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        params = {name: strip_tags(value) for name, value in PSEUDO_PARAM_RE.findall(inner)}
+        name = params.pop("name", "") or params.pop("tool", "") or ""
+        if not name:
+            if "command" in params:
+                name = preferred_shell or "shell"
+            elif len(tool_names) == 1:
+                name = tool_names[0]
+            else:
+                name = "tool"
+        append_call(name, params)
+        return ""
+
+    def replace_call(match: re.Match[str]) -> str:
+        raw_call = match.group(0)
+        attrs = parse_pseudo_attributes(match.group(1))
+        name = attrs.get("name", "")
+        arguments = parse_json_like_object(attrs.get("arguments", "")) if attrs.get("arguments") else None
+        if not isinstance(arguments, dict):
+            arguments = {key: value for key, value in attrs.items() if key not in ("type", "name")}
+        inner_params = {param_name: strip_tags(value) for param_name, value in PSEUDO_PARAM_RE.findall(match.group(2))}
+        arguments.update(inner_params)
+        if "path" not in arguments and "command" not in arguments:
+            path_match = re.search(r"[A-Za-z]:\\[^\r\n\"'{}<>]+", raw_call)
+            if path_match:
+                arguments["path"] = path_match.group(0).strip()
+        append_call(name, arguments)
+        return ""
+
+    cleaned = PSEUDO_FUNCTION_RE.sub(replace_function, text)
+    cleaned = PSEUDO_CALL_RE.sub(replace_call, cleaned)
+
+    def replace_read_file(match: re.Match[str]) -> str:
+        attrs = parse_pseudo_attributes(match.group(1))
+        path = attrs.get("path", "")
+        append_call("read_file" if "read_file" in tool_names else (preferred_shell or "read_file"), {"path": path})
+        return ""
+
+    def replace_exec_command(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        command_match = PSEUDO_COMMAND_RE.search(inner)
+        command = strip_tags(command_match.group(1) if command_match else inner)
+        append_call(preferred_shell or "shell", {"command": command})
+        return ""
+
+    def replace_invoke(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        tool_match = PSEUDO_TOOL_RE.search(inner)
+        command_match = PSEUDO_COMMAND_RE.search(inner)
+        name = strip_tags(tool_match.group(1)) if tool_match else (preferred_shell or "shell")
+        arguments: Dict[str, Any] = {}
+        if command_match:
+            arguments["command"] = strip_tags(command_match.group(1))
+        else:
+            arguments = {param_name: strip_tags(value) for param_name, value in PSEUDO_PARAM_RE.findall(inner)}
+        append_call(name, arguments)
+        return ""
+
+    def replace_shell(match: re.Match[str]) -> str:
+        append_call(preferred_shell or "shell", {"command": strip_tags(match.group(1))})
+        return ""
+
+    def replace_tool_invoke(match: re.Match[str]) -> str:
+        attrs = parse_pseudo_attributes(match.group(1))
+        inner = match.group(2)
+        name = attrs.get("name", "")
+        arguments = {param_name: strip_tags(value) for param_name, value in PSEUDO_PARAMETER_RE.findall(inner)}
+        append_call(name, arguments)
+        return ""
+
+    cleaned = PSEUDO_READ_FILE_RE.sub(replace_read_file, cleaned)
+    cleaned = PSEUDO_EXEC_COMMAND_RE.sub(replace_exec_command, cleaned)
+    cleaned = PSEUDO_INVOKE_RE.sub(replace_invoke, cleaned)
+    cleaned = PSEUDO_SHELL_RE.sub(replace_shell, cleaned)
+    cleaned = PSEUDO_TOOL_INVOKE_RE.sub(replace_tool_invoke, cleaned)
+    cleaned = PSEUDO_TOOL_RESULTS_RE.sub("", cleaned)
+    cleaned = PSEUDO_TOOL_CALL_PLAN_RE.sub("", cleaned)
+    return cleaned.strip(), calls
 
 
 def current_config() -> AppConfig:
@@ -85,6 +246,11 @@ def send_sse_headers(handler: BaseHTTPRequestHandler) -> None:
 def write_sse(handler: BaseHTTPRequestHandler, event: str, data: Dict[str, Any]) -> None:
     payload = f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
     handler.wfile.write(payload.encode("utf-8"))
+    handler.wfile.flush()
+
+
+def write_data_sse(handler: BaseHTTPRequestHandler, data: str) -> None:
+    handler.wfile.write(f"data: {data}\n\n".encode("utf-8"))
     handler.wfile.flush()
 
 
@@ -522,6 +688,116 @@ def anthropic_messages_to_upstream(body: Dict[str, Any], model_config: ModelConf
     return anthropic_messages_to_responses(body, fallback_model, upstream_model)
 
 
+def responses_request_to_upstream(body: Dict[str, Any], fallback_model: str, upstream_model: Optional[str] = None) -> Dict[str, Any]:
+    payload: Dict[str, Any] = dict(body)
+    payload["model"] = upstream_model or os.getenv("UPSTREAM_MODEL") or body.get("model") or fallback_model
+    payload["stream"] = bool(body.get("stream", True))
+    return payload
+
+
+def responses_content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return "" if content is None else str(content)
+    texts: List[str] = []
+    for part in content:
+        if isinstance(part, str):
+            texts.append(part)
+        elif isinstance(part, dict):
+            if part.get("type") in ("input_text", "output_text", "text"):
+                texts.append(part.get("text", ""))
+            elif part.get("type") in ("input_image", "image_url"):
+                texts.append("[image]")
+            else:
+                texts.append(json.dumps(part, ensure_ascii=False))
+        else:
+            texts.append(str(part))
+    return "\n".join(text for text in texts if text)
+
+
+def responses_tool_to_chat_tool(tool: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if tool.get("type") != "function":
+        return None
+    if isinstance(tool.get("function"), dict):
+        function = dict(tool["function"])
+    else:
+        function = {
+            "name": tool.get("name") or "tool",
+            "description": tool.get("description", ""),
+            "parameters": tool.get("parameters") or {},
+        }
+    return {"type": "function", "function": function}
+
+
+def responses_request_to_chat_completions(body: Dict[str, Any], fallback_model: str, upstream_model: Optional[str] = None) -> Dict[str, Any]:
+    messages: List[Dict[str, Any]] = []
+    instructions = body.get("instructions")
+    if isinstance(instructions, str) and instructions.strip():
+        messages.append({"role": "system", "content": instructions})
+    if body.get("tools"):
+        messages.append({"role": "system", "content": "When tools are needed, call the provided tools through the native tool_calls API. Do not write XML, pseudo-code, <function>, <Invoke>, or markdown tool-call text. If a file path is requested and a shell tool is available, call the shell tool to read it instead of guessing."})
+
+    input_items = body.get("input")
+    if isinstance(input_items, str):
+        messages.append({"role": "user", "content": input_items})
+    elif isinstance(input_items, list):
+        pending_tool_calls: Dict[str, Dict[str, Any]] = {}
+        for item in input_items:
+            if not isinstance(item, dict):
+                messages.append({"role": "user", "content": str(item)})
+                continue
+            item_type = item.get("type")
+            if item_type == "function_call":
+                call_id = item.get("call_id") or item.get("id") or f"call_proxy_{now_ms()}"
+                arguments = item.get("arguments", "")
+                if not isinstance(arguments, str):
+                    arguments = json_dumps_compact(arguments)
+                pending_tool_calls[call_id] = {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": item.get("name") or "tool", "arguments": arguments},
+                }
+                messages.append({"role": "assistant", "content": None, "tool_calls": [pending_tool_calls[call_id]]})
+                continue
+            if item_type in ("function_call_output", "tool_result"):
+                call_id = item.get("call_id") or item.get("id") or ""
+                output_text = responses_content_to_text(item.get("output") or item.get("content"))
+                messages.append({"role": "tool", "tool_call_id": call_id, "content": output_text})
+                if output_text:
+                    visible_text = anthropic_tool_results_visible_text([{"tool_use_id": call_id, "content": output_text}])
+                    messages.append({"role": "user", "content": visible_text})
+                continue
+            role = item.get("role") or ("assistant" if item_type == "message" else "user")
+            messages.append({"role": role, "content": responses_content_to_text(item.get("content"))})
+    else:
+        messages.append({"role": "user", "content": ""})
+
+    payload: Dict[str, Any] = {
+        "model": upstream_model or os.getenv("UPSTREAM_MODEL") or body.get("model") or fallback_model,
+        "messages": messages,
+        "stream": bool(body.get("stream", True)),
+    }
+    if isinstance(body.get("max_output_tokens"), int):
+        payload["max_tokens"] = body["max_output_tokens"]
+    if isinstance(body.get("temperature"), (int, float)):
+        payload["temperature"] = body["temperature"]
+    if isinstance(body.get("top_p"), (int, float)):
+        payload["top_p"] = body["top_p"]
+    tools = [tool for tool in (responses_tool_to_chat_tool(item) for item in body.get("tools", [])) if tool]
+    if tools:
+        payload["tools"] = tools
+    if body.get("tool_choice") is not None:
+        payload["tool_choice"] = body["tool_choice"]
+    return payload
+
+
+def responses_request_to_model_upstream(body: Dict[str, Any], model_config: ModelConfig, fallback_model: str, upstream_model: Optional[str]) -> Dict[str, Any]:
+    if model_config.api_format == "chat_completions":
+        return responses_request_to_chat_completions(body, fallback_model, upstream_model)
+    return responses_request_to_upstream(body, fallback_model, upstream_model)
+
+
 def normalize_upstream_url(upstream_url: str, api_format: str) -> str:
     url = upstream_url.strip()
     if api_format == "chat_completions" and not url.rstrip("/").endswith("/chat/completions"):
@@ -580,8 +856,8 @@ def chat_tool_call_payloads(tool_calls: Any, is_delta: bool) -> List[Dict[str, A
         payloads.append({
             "id": tool_call.get("id") or "",
             "index": tool_call.get("index", 0),
-            "name": function.get("name", ""),
-            "arguments": function.get("arguments") or "",
+            "name": function.get("name") or "",
+            "arguments": function.get("arguments") if function.get("arguments") is not None else "",
             "replace_arguments": not is_delta,
         })
     return payloads
@@ -864,8 +1140,76 @@ def merge_tool_call_payloads(tool_calls: List[Dict[str, Any]], parsed: Optional[
     merge_tool_call(tool_calls, parsed)
 
 
+def chat_completion_json_to_responses(payload: Dict[str, Any], model: str, input_tokens: int, tools: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    if isinstance(payload.get("error"), dict):
+        message = payload["error"].get("message") or json.dumps(payload["error"], ensure_ascii=False)
+        raise ValueError(str(message))
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError(f"Upstream response missing choices: {json.dumps(payload, ensure_ascii=False)[:1000]}")
+    choice = choices[0] if isinstance(choices[0], dict) else {}
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    output_text = message.get("content") or ""
+    output_text, pseudo_tool_calls = parse_pseudo_function_calls(output_text, tools)
+    output: List[Dict[str, Any]] = []
+    if output_text:
+        output.append({"id": response_output_item_id(), "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": output_text}]})
+    parsed_tool_calls = chat_tool_call_payloads(message.get("tool_calls"), False) + pseudo_tool_calls
+    for offset, tool_call in enumerate(parsed_tool_calls):
+        output.append({
+            "id": tool_call.get("id") or f"fc_proxy_{now_ms()}_{offset}",
+            "type": "function_call",
+            "status": "completed",
+            "call_id": tool_call.get("id") or f"call_proxy_{now_ms()}_{offset}",
+            "name": tool_call.get("name") or "tool",
+            "arguments": tool_arguments_json(tool_call.get("arguments", "")),
+        })
+    response_payload = responses_completed_payload(response_id(), model, output, input_tokens, output_text)
+    usage = payload.get("usage")
+    if isinstance(usage, dict):
+        response_payload["usage"] = {
+            "input_tokens": int(usage.get("prompt_tokens") or usage.get("input_tokens") or response_payload["usage"]["input_tokens"]),
+            "output_tokens": int(usage.get("completion_tokens") or usage.get("output_tokens") or response_payload["usage"]["output_tokens"]),
+            "total_tokens": int(usage.get("total_tokens") or response_payload["usage"]["total_tokens"]),
+        }
+    return response_payload
+
+
 def anthropic_message_id() -> str:
     return f"msg_proxy_{now_ms()}"
+
+
+def response_id() -> str:
+    return f"resp_proxy_{now_ms()}"
+
+
+def response_output_item_id(index: int = 0) -> str:
+    return f"msg_proxy_{now_ms()}_{index}"
+
+
+def responses_usage(input_tokens: int, output_text: str) -> Dict[str, int]:
+    output_tokens = max(1, len(output_text) // 4) if output_text else 0
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def responses_completed_payload(request_id: str, model: str, output: List[Dict[str, Any]], input_tokens: int, output_text: str) -> Dict[str, Any]:
+    return {
+        "id": request_id,
+        "object": "response",
+        "created_at": int(time.time()),
+        "status": "completed",
+        "model": model,
+        "output": output,
+        "usage": responses_usage(input_tokens, output_text),
+    }
+
+
+def responses_error_payload(message: str, error_type: str = "api_error") -> Dict[str, Any]:
+    return {"error": {"message": message, "type": error_type}}
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -906,8 +1250,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 input_tokens = 1
             send_json(self, 200, {"input_tokens": input_tokens})
             return
+        if route_path in ("/v1/responses", "/responses"):
+            self.handle_responses_post()
+            return
         if route_path not in ("/v1/messages", "/messages"):
-            send_json(self, 404, {"type": "error", "error": {"type": "not_found_error", "message": "Use /v1/messages"}})
+            send_json(self, 404, {"type": "error", "error": {"type": "not_found_error", "message": "Use /v1/messages or /v1/responses"}})
             return
 
         try:
@@ -944,6 +1291,175 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     send_json(self, 500, {"type": "error", "error": {"type": "api_error", "message": str(exc)}})
                 except Exception:
                     pass
+
+    def handle_responses_post(self) -> None:
+        try:
+            body = read_json_body(self)
+            stream = bool(body.get("stream", True))
+            config = current_config()
+            model_config = config.find_model(body.get("model"))
+            upstream_url = os.getenv("UPSTREAM_RESPONSES_URL") or model_config.base_url
+            fallback_model = os.getenv("UPSTREAM_MODEL") or model_config.model_id
+            upstream_model = os.getenv("UPSTREAM_MODEL") or model_config.upstream_model
+            auth_token = os.getenv("UPSTREAM_API_KEY") or model_config.api_key or os.getenv("ANTHROPIC_AUTH_TOKEN") or ""
+            timeout = int(os.getenv("UPSTREAM_TIMEOUT", str(config.timeout)))
+            if not auth_token:
+                send_json(self, 500, responses_error_payload(f"No API key configured for model {model_config.model_id}", "authentication_error"))
+                return
+            upstream_payload = responses_request_to_model_upstream(body, model_config, fallback_model, upstream_model)
+            log(
+                "codex request "
+                f"model={body.get('model')} route={model_config.model_id} "
+                f"upstream_model={upstream_payload.get('model')} "
+                f"format={model_config.api_format} stream={stream}"
+            )
+            if stream:
+                upstream_payload["stream"] = True
+                self.handle_responses_streaming(body, upstream_payload, auth_token, upstream_url, timeout, model_config)
+            else:
+                self.handle_responses_non_streaming(body, upstream_payload, auth_token, upstream_url, timeout, model_config)
+        except Exception as exc:
+            log(traceback.format_exc())
+            if not self.wfile.closed:
+                try:
+                    send_json(self, 500, responses_error_payload(str(exc)))
+                except Exception:
+                    pass
+
+    def handle_responses_streaming(self, body: Dict[str, Any], upstream_payload: Dict[str, Any], auth_token: str, upstream_url: str, timeout: int, model_config: ModelConfig) -> None:
+        request_id = response_id()
+        message_id = response_output_item_id()
+        output_text_parts: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        thinking_state: Dict[str, Any] = {"in_thinking": False}
+        done_payload: Optional[Dict[str, Any]] = None
+        sequence_number = 0
+        send_sse_headers(self)
+
+        def emit(event_type: str, payload: Dict[str, Any]) -> None:
+            nonlocal sequence_number
+            payload.setdefault("type", event_type)
+            payload.setdefault("sequence_number", sequence_number)
+            sequence_number += 1
+            write_sse(self, event_type, payload)
+
+        emit("response.created", {"response": {"id": request_id, "object": "response", "created_at": int(time.time()), "status": "in_progress", "model": model_config.model_id, "output": []}})
+        emit("response.in_progress", {"response": {"id": request_id, "status": "in_progress"}})
+        try:
+            with open_upstream(upstream_payload, auth_token, upstream_url, timeout, model_config.api_format) as response:
+                log(f"codex upstream connected model={model_config.model_id} format={model_config.api_format} status={getattr(response, 'status', 'unknown')}")
+                for event, data in iter_sse_lines(response):
+                    kind, parsed = extract_text_delta(event, data)
+                    if kind == "delta" and parsed:
+                        text = filter_thinking_text_delta(parsed.get("text", ""), thinking_state)
+                        if text:
+                            output_text_parts.append(text)
+                    elif kind in ("tool_call", "tool_call_delta", "tool_calls", "tool_calls_delta") and parsed:
+                        merge_tool_call_payloads(tool_calls, parsed)
+                    elif kind == "error":
+                        emit("response.failed", {"response": {"id": request_id, "status": "failed", "error": parsed}})
+                        write_data_sse(self, "[DONE]")
+                        self.close_connection = True
+                        return
+                    elif kind == "done":
+                        done_payload = parsed
+                        break
+        except urllib.error.HTTPError as exc:
+            message = upstream_error_message(exc)
+            log(f"codex upstream http error model={model_config.model_id} status={exc.code} body={message[:500]}")
+            emit("response.failed", {"response": {"id": request_id, "status": "failed", "error": {"type": "api_error", "message": message}}})
+            write_data_sse(self, "[DONE]")
+            self.close_connection = True
+            return
+        except Exception as exc:
+            log(f"codex upstream connection error model={model_config.model_id} format={model_config.api_format} error={exc}")
+            emit("response.failed", {"response": {"id": request_id, "status": "failed", "error": {"type": "api_error", "message": f"Upstream connection error: {exc}"}}})
+            write_data_sse(self, "[DONE]")
+            self.close_connection = True
+            return
+
+        output_text = "".join(output_text_parts)
+        output_text, pseudo_tool_calls = parse_pseudo_function_calls(output_text, body.get("tools"))
+        if pseudo_tool_calls:
+            for pseudo_tool_call in pseudo_tool_calls:
+                merge_tool_call_payloads(tool_calls, pseudo_tool_call)
+        output: List[Dict[str, Any]] = []
+        if output_text:
+            emit("response.output_item.added", {"output_index": 0, "item": {"id": message_id, "type": "message", "status": "in_progress", "role": "assistant", "content": []}})
+            emit("response.content_part.added", {"item_id": message_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": ""}})
+            emit("response.output_text.delta", {"item_id": message_id, "output_index": 0, "content_index": 0, "delta": output_text})
+            emit("response.output_text.done", {"item_id": message_id, "output_index": 0, "content_index": 0, "text": output_text})
+            text_item = {"id": message_id, "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": output_text}]}
+            emit("response.content_part.done", {"item_id": message_id, "output_index": 0, "content_index": 0, "part": text_item["content"][0]})
+            emit("response.output_item.done", {"output_index": 0, "item": text_item})
+            output.append(text_item)
+        for offset, tool_call in enumerate(tool_calls):
+            item = {"id": tool_call.get("id") or f"fc_proxy_{now_ms()}_{offset}", "type": "function_call", "status": "completed", "call_id": tool_call.get("id") or f"call_proxy_{now_ms()}_{offset}", "name": tool_call.get("name") or "tool", "arguments": tool_arguments_json(tool_call.get("arguments", ""))}
+            output_index = len(output)
+            emit("response.output_item.added", {"output_index": output_index, "item": dict(item, status="in_progress")})
+            emit("response.function_call_arguments.delta", {"item_id": item["id"], "output_index": output_index, "delta": item["arguments"]})
+            emit("response.function_call_arguments.done", {"item_id": item["id"], "output_index": output_index, "arguments": item["arguments"]})
+            emit("response.output_item.done", {"output_index": output_index, "item": item})
+            output.append(item)
+        completed = responses_completed_payload(request_id, model_config.model_id, output, estimate_value_tokens(body.get("input")), output_text)
+        if done_payload and isinstance(done_payload.get("response"), dict):
+            completed["usage"] = done_payload["response"].get("usage") or completed["usage"]
+        emit("response.completed", {"response": completed})
+        write_data_sse(self, "[DONE]")
+        self.close_connection = True
+
+    def handle_responses_non_streaming(self, body: Dict[str, Any], upstream_payload: Dict[str, Any], auth_token: str, upstream_url: str, timeout: int, model_config: ModelConfig) -> None:
+        if model_config.api_format == "chat_completions":
+            upstream_payload["stream"] = False
+            try:
+                with open_upstream(upstream_payload, auth_token, upstream_url, timeout, model_config.api_format) as response:
+                    raw_payload = response.read().decode("utf-8", errors="replace")
+                payload = chat_completion_json_to_responses(json.loads(raw_payload), model_config.model_id, estimate_value_tokens(body.get("input")), body.get("tools"))
+                send_json(self, 200, payload)
+                return
+            except urllib.error.HTTPError as exc:
+                send_json(self, 502, responses_error_payload(upstream_error_message(exc)))
+                return
+            except Exception as exc:
+                send_json(self, 502, responses_error_payload(f"Upstream response error: {exc}"))
+                return
+        upstream_payload["stream"] = True
+        text_parts: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        done_payload: Optional[Dict[str, Any]] = None
+        thinking_state: Dict[str, Any] = {"in_thinking": False}
+        try:
+            with open_upstream(upstream_payload, auth_token, upstream_url, timeout, model_config.api_format) as response:
+                for event, data in iter_sse_lines(response):
+                    kind, parsed = extract_text_delta(event, data)
+                    if kind == "delta" and parsed:
+                        text = filter_thinking_text_delta(parsed.get("text", ""), thinking_state)
+                        if text:
+                            text_parts.append(text)
+                    elif kind in ("tool_call", "tool_call_delta", "tool_calls", "tool_calls_delta") and parsed:
+                        merge_tool_call_payloads(tool_calls, parsed)
+                    elif kind == "error":
+                        send_json(self, 502, responses_error_payload(json.dumps(parsed, ensure_ascii=False)))
+                        return
+                    elif kind == "done":
+                        done_payload = parsed
+                        break
+        except urllib.error.HTTPError as exc:
+            send_json(self, 502, responses_error_payload(upstream_error_message(exc)))
+            return
+        except Exception as exc:
+            send_json(self, 502, responses_error_payload(f"Upstream connection error: {exc}"))
+            return
+        output_text = "".join(text_parts)
+        output: List[Dict[str, Any]] = []
+        if output_text:
+            output.append({"id": response_output_item_id(), "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": output_text}]})
+        for offset, tool_call in enumerate(tool_calls):
+            output.append({"id": tool_call.get("id") or f"fc_proxy_{now_ms()}_{offset}", "type": "function_call", "status": "completed", "call_id": tool_call.get("id") or f"call_proxy_{now_ms()}_{offset}", "name": tool_call.get("name") or "tool", "arguments": tool_arguments_json(tool_call.get("arguments", ""))})
+        payload = responses_completed_payload(response_id(), model_config.model_id, output, estimate_value_tokens(body.get("input")), output_text)
+        if done_payload and isinstance(done_payload.get("response"), dict):
+            payload["usage"] = done_payload["response"].get("usage") or payload["usage"]
+        send_json(self, 200, payload)
 
     def handle_streaming(self, body: Dict[str, Any], upstream_payload: Dict[str, Any], auth_token: str, upstream_url: str, timeout: int, model_config: ModelConfig) -> None:
         message_id = anthropic_message_id()

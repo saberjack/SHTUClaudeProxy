@@ -27,6 +27,8 @@ Thumbs.db
 
 # Secrets and backups
 *.bak
+*.bak_*
+config.json.bak_*
 *.key
 *.pem
 
@@ -40,5 +42,11 @@ backups/
 
 # Smoke test scratch
 .smoke_tmp/
+.proxy_probe/
+
+# Versioned local release binaries are uploaded as GitHub Release assets,
+# not committed to git history.
+release/*.exe
+
 # Cross-platform source bundles
 release/SHTUClaudeProxy-source-*.zip

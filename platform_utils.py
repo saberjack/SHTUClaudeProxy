@@ -24,6 +24,14 @@ def default_claude_settings_path() -> str:
     return str(Path.home() / ".claude" / "settings.json")
 
 
+def default_codex_config_path() -> str:
+    return str(Path.home() / ".codex" / "config.toml")
+
+
+def default_codex_auth_path() -> str:
+    return str(Path.home() / ".codex" / "auth.json")
+
+
 def default_claude_path() -> str:
     candidates = ["claude.cmd", "claude.exe", "claude"] if is_windows() else ["claude"]
     for candidate in candidates:
@@ -68,6 +76,20 @@ def portable_settings_path(value: str) -> str:
     value = (value or "").strip()
     if not value or path_has_other_user_home(value):
         return default_claude_settings_path()
+    return os.path.expandvars(value)
+
+
+def portable_codex_config_path(value: str) -> str:
+    value = (value or "").strip()
+    if not value or path_has_other_user_home(value):
+        return default_codex_config_path()
+    return os.path.expandvars(value)
+
+
+def portable_codex_auth_path(value: str) -> str:
+    value = (value or "").strip()
+    if not value or path_has_other_user_home(value):
+        return default_codex_auth_path()
     return os.path.expandvars(value)
 
 

@@ -11,8 +11,9 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 import proxy
+import cli
 from config_store import AppConfig, DEFAULT_API_FORMAT, DEFAULT_CHAT_COMPLETIONS_URL, DEFAULT_RESPONSES_URL, MODEL_ENV_KEYS, ModelConfig, config_path, default_claude_path, default_claude_settings_path, load_config, portable_claude_path, portable_settings_path, save_config
-from platform_utils import is_windows, launch_claude, launch_script_filename, launch_script_text
+from platform_utils import default_codex_auth_path, default_codex_config_path, is_windows, launch_claude, launch_script_filename, launch_script_text, portable_codex_auth_path, portable_codex_config_path
 
 
 class ProxyApp(tk.Tk):
@@ -22,6 +23,7 @@ class ProxyApp(tk.Tk):
         self.geometry("1280x900")
         self.minsize(1040, 680)
         self.config_data = load_config()
+        save_config(self.config_data)
         self.server: Optional[ThreadingHTTPServer] = None
         self.server_thread: Optional[threading.Thread] = None
         self.selected_index: Optional[int] = None
@@ -29,14 +31,19 @@ class ProxyApp(tk.Tk):
         self.host_var = tk.StringVar(value=self.config_data.host)
         self.port_var = tk.StringVar(value=str(self.config_data.port))
         self.default_model_var = tk.StringVar(value=self.config_data.default_model_id)
+        self.codex_model_var = tk.StringVar(value=self.config_data.codex_model_id)
         self.timeout_var = tk.StringVar(value=str(self.config_data.timeout))
         self.claude_path_var = tk.StringVar(value=self.config_data.claude_path)
         self.claude_settings_path_var = tk.StringVar(value=self.config_data.claude_settings_path)
+        self.client_mode_var = tk.StringVar(value="claude")
+        self.codex_config_path_var = tk.StringVar(value=self.config_data.codex_config_path)
+        self.codex_auth_path_var = tk.StringVar(value=self.config_data.codex_auth_path)
         self.model_env_vars = {
             key: tk.StringVar(value=self.config_data.model_env.get(key) or self.config_data.default_model_id)
             for key in MODEL_ENV_KEYS
         }
         self.model_env_combos: list[ttk.Combobox] = []
+        self.codex_model_combo: Optional[ttk.Combobox] = None
         self.route_summary_var = tk.StringVar()
         self.scroll_canvas: Optional[tk.Canvas] = None
 
@@ -61,6 +68,7 @@ class ProxyApp(tk.Tk):
         style.configure("Warning.TButton", font=("Segoe UI", 10, "bold"), foreground="#9a4d00")
         style.configure("StepTitle.TLabel", font=("Segoe UI", 10, "bold"))
         style.configure("Hint.TLabel", foreground="#555555")
+        style.configure("Danger.TLabel", foreground="#b00020", font=("Segoe UI", 10, "bold"))
         style.configure("Status.TLabel", font=("Segoe UI", 10, "bold"), foreground="#0f6b2f")
 
     def create_widgets(self) -> None:
@@ -104,6 +112,12 @@ class ProxyApp(tk.Tk):
             style="Hint.TLabel",
         ).grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
 
+        mode_frame = ttk.LabelFrame(root, text="Client Mode")
+        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(mode_frame, text="Choose which client configuration to write. The proxy can serve both Claude and Codex at the same time.", style="Hint.TLabel").pack(side=tk.LEFT, padx=8, pady=8)
+        ttk.Radiobutton(mode_frame, text="Claude Code", variable=self.client_mode_var, value="claude", command=self.refresh_mode_hint).pack(side=tk.RIGHT, padx=8, pady=8)
+        ttk.Radiobutton(mode_frame, text="Codex CLI/Desktop", variable=self.client_mode_var, value="codex", command=self.refresh_mode_hint).pack(side=tk.RIGHT, padx=8, pady=8)
+
         actions = ttk.LabelFrame(root, text="Quick Start")
         actions.pack(fill=tk.X, pady=(0, 10))
         for column in range(4):
@@ -113,9 +127,9 @@ class ProxyApp(tk.Tk):
             actions,
             0,
             "Fast Start",
-            "Save + Connect + Launch",
-            "Recommended: write settings, start proxy, and open Claude Code.",
-            self.setup_and_launch,
+            "Save + Connect",
+            "Recommended: write selected client config and start proxy.",
+            self.setup_selected_client,
             "Success.TButton",
         )
 
@@ -131,19 +145,19 @@ class ProxyApp(tk.Tk):
         self.create_step_card(
             actions,
             2,
-            "2. Connect Claude",
-            "Write Claude Settings",
-            "One-time setup: write selected model routing to Claude Code.",
-            self.write_claude_settings,
+            "2. Connect Client",
+            "Write Client Config",
+            "One-time setup: write Claude settings or Codex config.toml.",
+            self.write_selected_client_config,
             "Warning.TButton",
         )
         self.create_step_card(
             actions,
             3,
             "3. Run",
-            "Start Proxy + Launch Claude",
-            "Daily use: start proxy, then open Claude Code.",
-            self.launch_claude_code,
+            "Start Proxy / Launch",
+            "Claude mode opens Claude Code; Codex mode starts proxy only.",
+            self.run_selected_client,
             "Success.TButton",
         )
 
@@ -166,6 +180,12 @@ class ProxyApp(tk.Tk):
         ttk.Label(server_frame, text="Claude Settings Path").grid(row=2, column=0, padx=6, pady=8, sticky="w")
         ttk.Entry(server_frame, textvariable=self.claude_settings_path_var).grid(row=2, column=1, columnspan=6, padx=6, pady=8, sticky="ew")
         ttk.Button(server_frame, text="Browse", command=self.browse_claude_settings_path).grid(row=2, column=7, padx=6, pady=8, sticky="ew")
+        ttk.Label(server_frame, text="Codex config.toml Path").grid(row=3, column=0, padx=6, pady=8, sticky="w")
+        ttk.Entry(server_frame, textvariable=self.codex_config_path_var).grid(row=3, column=1, columnspan=6, padx=6, pady=8, sticky="ew")
+        ttk.Button(server_frame, text="Browse", command=self.browse_codex_config_path).grid(row=3, column=7, padx=6, pady=8, sticky="ew")
+        ttk.Label(server_frame, text="Codex auth.json Path").grid(row=4, column=0, padx=6, pady=8, sticky="w")
+        ttk.Entry(server_frame, textvariable=self.codex_auth_path_var).grid(row=4, column=1, columnspan=6, padx=6, pady=8, sticky="ew")
+        ttk.Button(server_frame, text="Browse", command=self.browse_codex_auth_path).grid(row=4, column=7, padx=6, pady=8, sticky="ew")
 
         env_frame = ttk.LabelFrame(root, text="Claude Model Routing")
         env_frame.pack(fill=tk.X, pady=(6, 0))
@@ -192,7 +212,15 @@ class ProxyApp(tk.Tk):
             combo.grid(row=1, column=0, sticky="ew")
             combo.bind("<<ComboboxSelected>>", self.on_model_route_changed)
             self.model_env_combos.append(combo)
-        ttk.Label(env_frame, textvariable=self.route_summary_var, style="StepTitle.TLabel").grid(row=2, column=0, columnspan=5, padx=8, pady=(2, 6), sticky="w")
+        codex_cell = ttk.Frame(env_frame)
+        codex_cell.grid(row=2, column=0, columnspan=5, padx=8, pady=(4, 2), sticky="ew")
+        codex_cell.columnconfigure(1, weight=1)
+        ttk.Label(codex_cell, text="Codex Model").grid(row=0, column=0, padx=(0, 8), sticky="w")
+        self.codex_model_combo = ttk.Combobox(codex_cell, textvariable=self.codex_model_var, state="readonly", width=24)
+        self.codex_model_combo.grid(row=0, column=1, sticky="w")
+        self.codex_model_combo.bind("<<ComboboxSelected>>", self.on_codex_model_changed)
+        ttk.Label(codex_cell, text="Used for Codex config.toml profile and auth.json API key selection.", style="Hint.TLabel").grid(row=0, column=2, padx=8, sticky="w")
+        ttk.Label(env_frame, textvariable=self.route_summary_var, style="StepTitle.TLabel").grid(row=3, column=0, columnspan=5, padx=8, pady=(2, 6), sticky="w")
 
         body = ttk.Frame(root)
         body.pack(fill=tk.BOTH, expand=True, pady=(8, 6))
@@ -248,7 +276,12 @@ class ProxyApp(tk.Tk):
             "API Format options: responses, chat_completions. Changing API Format updates Base URL automatically."
         )
         ttk.Label(edit_frame, text=hint, style="Hint.TLabel").grid(row=6, column=0, columnspan=2, padx=8, pady=4, sticky="w")
-        ttk.Button(edit_frame, text="Apply Model Changes", command=self.apply_model).grid(row=7, column=1, padx=8, pady=4, sticky="e")
+        ttk.Label(
+            edit_frame,
+            text="Important: For GPT models, choose API Format = responses.",
+            style="Danger.TLabel",
+        ).grid(row=7, column=0, columnspan=2, padx=8, pady=(2, 6), sticky="w")
+        ttk.Button(edit_frame, text="Apply Model Changes", command=self.apply_model).grid(row=8, column=1, padx=8, pady=4, sticky="e")
 
         status_frame = ttk.Frame(root)
         status_frame.pack(fill=tk.X, pady=(8, 0))
@@ -306,13 +339,20 @@ class ProxyApp(tk.Tk):
         for key, variable in self.model_env_vars.items():
             if variable.get() not in model_ids:
                 variable.set(self.config_data.default_model_id if self.config_data.default_model_id in model_ids else model_ids[0])
+        if self.codex_model_var.get() not in model_ids:
+            self.codex_model_var.set(self.config_data.codex_model_id if self.config_data.codex_model_id in model_ids else model_ids[0])
         self.default_model_var.set(self.model_env_vars["ANTHROPIC_MODEL"].get())
         for combo in self.model_env_combos:
             combo.configure(values=model_ids)
+        if self.codex_model_combo is not None:
+            self.codex_model_combo.configure(values=model_ids)
         self.update_model_route_summary()
 
     def on_model_route_changed(self, _event: object) -> None:
         self.default_model_var.set(self.model_env_vars["ANTHROPIC_MODEL"].get())
+        self.update_model_route_summary()
+
+    def on_codex_model_changed(self, _event: object) -> None:
         self.update_model_route_summary()
 
     def update_model_route_summary(self) -> None:
@@ -324,7 +364,16 @@ class ProxyApp(tk.Tk):
             ("Reasoning", "ANTHROPIC_REASONING_MODEL"),
         )
         summary = "Effective: " + " | ".join(f"{label}={self.model_env_vars[key].get()}" for label, key in labels)
+        summary += f" | Codex={self.codex_model_var.get()}"
         self.route_summary_var.set(summary)
+
+    def selected_codex_model_id(self) -> str:
+        model_ids = [model.model_id for model in self.config_data.models]
+        fallback = self.config_data.default_model_id if self.config_data.default_model_id in model_ids else model_ids[0]
+        value = self.codex_model_var.get().strip()
+        selected = value if value in model_ids else fallback
+        self.codex_model_var.set(selected)
+        return selected
 
     def selected_model_env(self) -> dict[str, str]:
         model_ids = [model.model_id for model in self.config_data.models]
@@ -336,6 +385,7 @@ class ProxyApp(tk.Tk):
             variable.set(selected[key])
         selected["ANTHROPIC_MODEL"] = self.model_env_vars["ANTHROPIC_MODEL"].get().strip() or fallback
         self.default_model_var.set(selected["ANTHROPIC_MODEL"])
+        self.selected_codex_model_id()
         self.update_model_route_summary()
         return selected
 
@@ -451,6 +501,28 @@ class ProxyApp(tk.Tk):
         if selected:
             self.claude_settings_path_var.set(selected)
 
+    def browse_codex_config_path(self) -> None:
+        initial = self.codex_config_path_var.get().strip()
+        initial_dir = str(Path(initial).parent) if initial and Path(initial).parent.exists() else str(Path.home() / ".codex")
+        selected = filedialog.askopenfilename(
+            title="Select Codex config.toml",
+            initialdir=initial_dir,
+            filetypes=[("TOML files", "*.toml"), ("All files", "*.*")],
+        )
+        if selected:
+            self.codex_config_path_var.set(selected)
+
+    def browse_codex_auth_path(self) -> None:
+        initial = self.codex_auth_path_var.get().strip()
+        initial_dir = str(Path(initial).parent) if initial and Path(initial).parent.exists() else str(Path.home() / ".codex")
+        selected = filedialog.askopenfilename(
+            title="Select Codex auth.json",
+            initialdir=initial_dir,
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if selected:
+            self.codex_auth_path_var.set(selected)
+
     def sync_server_fields(self) -> bool:
         try:
             port = int(self.port_var.get().strip())
@@ -462,9 +534,12 @@ class ProxyApp(tk.Tk):
         self.config_data.port = port
         self.config_data.model_env = self.selected_model_env()
         self.config_data.default_model_id = self.config_data.model_env["ANTHROPIC_MODEL"]
+        self.config_data.codex_model_id = self.selected_codex_model_id()
         self.config_data.timeout = timeout
         self.config_data.claude_path = portable_claude_path(self.claude_path_var.get().strip() or default_claude_path())
         self.config_data.claude_settings_path = portable_settings_path(self.claude_settings_path_var.get().strip() or default_claude_settings_path())
+        self.config_data.codex_config_path = portable_codex_config_path(self.codex_config_path_var.get().strip() or default_codex_config_path())
+        self.config_data.codex_auth_path = portable_codex_auth_path(self.codex_auth_path_var.get().strip() or default_codex_auth_path())
         return True
 
     def save(self) -> None:
@@ -476,8 +551,7 @@ class ProxyApp(tk.Tk):
 
     def start_proxy(self) -> None:
         if self.server:
-            messagebox.showinfo("Already running", "Proxy is already running.")
-            return
+            self.stop_proxy()
         self.save()
         proxy.ACTIVE_CONFIG = self.config_data
         try:
@@ -486,9 +560,20 @@ class ProxyApp(tk.Tk):
                 proxy.ProxyHandler,
             )
         except OSError as exc:
-            self.server = None
-            messagebox.showerror("Start failed", str(exc))
-            return
+            if cli.restart_existing_listener(self.config_data.host, self.config_data.port):
+                try:
+                    self.server = ThreadingHTTPServer(
+                        (self.config_data.host, self.config_data.port),
+                        proxy.ProxyHandler,
+                    )
+                except OSError as retry_exc:
+                    self.server = None
+                    messagebox.showerror("Start failed", str(retry_exc))
+                    return
+            else:
+                self.server = None
+                messagebox.showerror("Start failed", str(exc))
+                return
         self.server_thread = threading.Thread(
             target=self.server.serve_forever,
             daemon=True,
@@ -515,6 +600,13 @@ class ProxyApp(tk.Tk):
         self.clipboard_append(value)
         self.append_log("Copied Claude Code config to clipboard")
 
+    def refresh_mode_hint(self) -> None:
+        mode = self.client_mode_var.get()
+        if mode == "codex":
+            self.append_log("Codex mode selected: writes config.toml with wire_api=responses; start Codex manually with profile shtu_proxy.")
+        else:
+            self.append_log("Claude mode selected: writes Claude settings and can launch Claude Code.")
+
     def claude_env(self) -> dict[str, str]:
         if not self.sync_server_fields():
             return {}
@@ -537,27 +629,54 @@ class ProxyApp(tk.Tk):
         if self.needs_first_run_setup():
             messagebox.showwarning("API key required", "Please paste your GenAI API Key before writing Claude settings.")
             return False
-        settings_path = Path(self.config_data.claude_settings_path).expanduser()
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        existing: dict[str, object] = {}
-        if settings_path.exists():
-            try:
-                existing = json.loads(settings_path.read_text(encoding="utf-8-sig"))
-            except Exception:
-                backup = settings_path.with_suffix(settings_path.suffix + ".bak")
-                backup.write_bytes(settings_path.read_bytes())
-                self.append_log(f"Backed up unreadable settings to {backup}")
-        env = existing.get("env") if isinstance(existing.get("env"), dict) else {}
-        env.update(self.claude_env())
-        existing["env"] = env
-        existing["includeCoAuthoredBy"] = False
-        settings_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        settings_path = cli.write_claude_settings(self.config_data)
         self.append_log(f"Wrote Claude settings env: {settings_path}")
         if not self.server:
             self.start_proxy()
         if notify:
             messagebox.showinfo("Claude settings written", f"Updated env in:\n{settings_path}\n\nProxy is running at http://{self.config_data.host}:{self.config_data.port}. Restart Claude Code to use it.")
         return True
+
+    def write_codex_config(self, notify: bool = True) -> bool:
+        self.save()
+        if self.needs_first_run_setup():
+            messagebox.showwarning("API key required", "Please paste your GenAI API Key before writing Codex config.")
+            return False
+        config_path_written, auth_path_written = cli.write_codex_files(self.config_data)
+        save_config(self.config_data)
+        self.append_log(f"Wrote Codex config: {config_path_written}")
+        self.append_log(f"Wrote Codex auth: {auth_path_written}")
+        if not self.server:
+            self.start_proxy()
+        if notify:
+            messagebox.showinfo(
+                "Codex config written",
+                "Updated Codex provider/profile and auth key in:\n"
+                f"{config_path_written}\n{auth_path_written}\n\n"
+                f"Proxy is running at http://{self.config_data.host}:{self.config_data.port}.\n"
+                "Use Codex profile: shtu_proxy.",
+            )
+        return True
+
+    def write_selected_client_config(self) -> bool:
+        if self.client_mode_var.get() == "codex":
+            return self.write_codex_config()
+        return self.write_claude_settings()
+
+    def setup_selected_client(self) -> None:
+        if self.client_mode_var.get() == "codex":
+            self.write_codex_config()
+            return
+        self.setup_and_launch()
+
+    def run_selected_client(self) -> None:
+        if self.client_mode_var.get() == "codex":
+            self.save()
+            if not self.server:
+                self.start_proxy()
+            messagebox.showinfo("Codex ready", "Proxy is running. Start Codex with profile shtu_proxy from Codex CLI/Desktop.")
+            return
+        self.launch_claude_code()
 
     def setup_and_launch(self) -> None:
         if not self.write_claude_settings(notify=False):
@@ -572,13 +691,7 @@ class ProxyApp(tk.Tk):
 
     def install_launch_script(self) -> None:
         self.save()
-        script = self.launch_script_text()
-        if not script:
-            return
-        target_dir = Path.home() / "shtu-claude-proxy"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / launch_script_filename()
-        target.write_text(script, encoding="utf-8")
+        target = cli.install_launch_script(self.config_data)
         if not is_windows():
             target.chmod(0o755)
         self.clipboard_clear()

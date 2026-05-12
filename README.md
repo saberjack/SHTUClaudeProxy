@@ -1,12 +1,12 @@
-# SHTUClaudeProxy
+﻿# SHTUClaudeProxy
 
 > **Important:** GPT-series models should use the `responses` API Format.
 
-Current development version: **v2.0.0**
+Current development version: **v3.2.20**
 
-SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code** to the ShanghaiTech University campus **GenAI Response API**.
+SHTUClaudeProxy is a cross-platform local proxy for connecting **Claude Code**, **Codex CLI**, and **Codex Desktop** to the ShanghaiTech University campus **GenAI Response API** or compatible local model endpoints.
 
-This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It helps users access Claude Code through the university GenAI API by translating Claude Code's Anthropic Messages API traffic into an OpenAI Responses-style upstream request and converting streaming responses back into Claude Code-compatible Server-Sent Events.
+This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It helps users access Claude Code through the university GenAI API by translating Claude Code's Anthropic Messages API traffic into upstream requests and converting streaming responses back into Claude Code-compatible Server-Sent Events. v3.2.20 also exposes an OpenAI Responses-compatible `/v1/responses` endpoint for Codex clients.
 
 > Note: SHTUClaudeProxy is a local proxy tool created by sunyb for ShanghaiTech campus GenAI API access from Claude Code.
 
@@ -30,7 +30,13 @@ ShanghaiTech GenAI Response API returns OpenAI Responses-style streaming events 
 event: response.output_text.delta
 ```
 
-SHTUClaudeProxy bridges the two formats:
+Codex clients expect an OpenAI Responses-compatible endpoint such as:
+
+```text
+POST /v1/responses
+```
+
+SHTUClaudeProxy bridges both client formats:
 
 ```text
 Claude Code
@@ -40,6 +46,13 @@ Claude Code
   -> OpenAI Responses SSE
   -> Anthropic-style SSE
   -> Claude Code
+
+Codex CLI/Desktop
+  -> OpenAI Responses request
+  -> SHTUClaudeProxy on 127.0.0.1:8082
+  -> Responses or Chat Completions upstream
+  -> OpenAI Responses SSE
+  -> Codex
 ```
 
 ## Features
@@ -48,6 +61,7 @@ Claude Code
 - Guided quick-start GUI with a one-click `Save + Connect + Launch` path plus manual step buttons.
 - Full-window scrolling for smaller displays.
 - Local Anthropic-compatible endpoint for Claude Code.
+- Local OpenAI Responses-compatible endpoint for Codex CLI and Codex Desktop.
 - Multiple model configurations.
 - Per-Claude-role model routing for `ANTHROPIC_MODEL`, Haiku, Sonnet, Opus, and reasoning model variables.
 - Per-model settings:
@@ -77,6 +91,7 @@ This project focuses on text streaming compatibility plus Claude Code tool-call 
 Known limitations:
 
 - Tool calls are translated between Anthropic `tool_use/tool_result` and upstream Chat Completions `tool_calls` or Responses `function_call/function_call_output` formats.
+- Codex support uses `/v1/responses`; Codex clients should not be configured against `/v1/chat/completions`.
 - Token usage fields are approximate.
 - Images are best-effort only.
 - Very complex Claude Code workflows may still need additional edge-case testing against the exact upstream model behavior.
@@ -138,7 +153,7 @@ python -m pip install -r requirements-build.txt
 
 ## Quick Start for End Users
 
-### 1. Install Claude Code
+### 1. Install Claude Code or Codex
 
 If Claude Code is installed with npm, the default executable is usually:
 
@@ -148,12 +163,14 @@ If Claude Code is installed with npm, the default executable is usually:
 
 The GUI tries to detect this automatically.
 
+For Codex CLI/Desktop, install and sign in to Codex separately. SHTUClaudeProxy only writes the local Codex provider/profile and serves the model endpoint.
+
 ### 2. Start SHTUClaudeProxy
 
 Recommended download for normal users:
 
 ```text
-SHTUClaudeProxy-v1.6.0-windows-x64.exe
+SHTUClaudeProxy-v3.2.20-windows-x64.exe
 ```
 
 Double-click it directly. No Python installation is required.
@@ -175,6 +192,7 @@ Host: 127.0.0.1
 Port: 8082
 Claude Settings Path: %USERPROFILE%\.claude\settings.json
 Claude Code Path: %APPDATA%\npm\claude.cmd
+Codex config.toml Path: %USERPROFILE%\.codex\config.toml
 ```
 
 You can change these if your environment is different.
@@ -186,7 +204,7 @@ For each model entry:
 | Field | Meaning | Example |
 | --- | --- | --- |
 | Display Name | Friendly name shown in the GUI | ShanghaiTech GPT-5.5 |
-| Model ID for Claude Code | Model name Claude Code will request | GPT-5.5 |
+| Model ID | Model name Claude Code or Codex will request | GPT-5.5 |
 | Base URL | Campus GenAI API endpoint | chat_completions: https://genaiapi.shanghaitech.edu.cn/api/v1/start; responses: https://genaiapi.shanghaitech.edu.cn/api/v1/response |
 | API Key | Your campus API key | keep private |
 | Upstream Model | Model ID sent to GenAI Response API | GPT-5.5 |
@@ -200,15 +218,42 @@ Apply Model Changes
 Save Config
 ```
 
-### 5. Write Claude Code Settings
+### 5. Choose Client Mode and Write Settings
 
-Click:
+Choose `Claude Code` or `Codex CLI/Desktop` in `Client Mode`.
+
+For Claude Code, click:
 
 ```text
-Write Claude Settings
+Write Client Config
 ```
 
-The app updates your Claude Code settings file, usually:
+This writes the Claude settings file exactly as in v2.0.0.
+
+For Codex, click the same button after selecting `Codex CLI/Desktop`. The app writes a `shtu_proxy` provider/profile to:
+
+```text
+%USERPROFILE%\.codex\config.toml
+```
+
+The Codex provider uses:
+
+```toml
+wire_api = "responses"
+base_url = "http://127.0.0.1:8082/v1"
+```
+
+Do not configure Codex against `/v1/chat/completions`; Codex must use the Responses wire API.
+
+Codex has its own `Codex Model` selector in the GUI. It is independent from Claude Model Routing, so Claude can keep separate Main/Haiku/Sonnet/Opus/Reasoning routes while Codex writes exactly one selected model into `config.toml`.
+
+For Claude Code, the app updates your Claude Code settings file, usually:
+
+```text
+%USERPROFILE%\.claude\settings.json
+```
+
+The Claude settings contain an `env` block like:
 
 ```text
 %USERPROFILE%\.claude\settings.json
@@ -249,12 +294,14 @@ Expected status:
 Running on http://127.0.0.1:8082
 ```
 
-### 7. Start Claude Code
+### 7. Start Claude Code or Codex
 
-You can either:
+For Claude Code, you can either:
 
-- click `Launch Claude Code` in the GUI, or
+- select `Claude Code` and click `Start Proxy / Launch`, or
 - start Claude Code manually after writing settings.
+
+For Codex, select `Codex CLI/Desktop`, click `Start Proxy / Launch`, then start Codex with profile `shtu_proxy`.
 
 If starting manually, make sure the proxy is already running.
 
@@ -303,6 +350,61 @@ curl -X POST https://genaiapi.shanghaitech.edu.cn/api/v1/start/chat/completions 
 ```
 
 In the GUI, `API Format` supports `responses` and `chat_completions`. Selecting `chat_completions` fills Base URL with `https://genaiapi.shanghaitech.edu.cn/api/v1/start`; selecting `responses` fills Base URL with `https://genaiapi.shanghaitech.edu.cn/api/v1/response`.
+
+## Codex CLI and Codex Desktop
+
+Codex only supports the OpenAI Responses wire format for custom providers. Configure Codex to talk to this proxy through `/v1/responses`; do not point Codex at a Chat Completions URL.
+
+The proxy accepts Codex requests at:
+
+```text
+http://127.0.0.1:8082/v1/responses
+```
+
+Add a custom provider to your Codex `config.toml`:
+
+```toml
+[model_providers.shtu_proxy]
+name = "SHTUClaudeProxy"
+base_url = "http://127.0.0.1:8082/v1"
+wire_api = "responses"
+requires_openai_auth = true
+
+[profiles.shtu_proxy]
+model_provider = "shtu_proxy"
+model = "GPT-5.5"
+```
+
+Write Codex auth at `%USERPROFILE%\.codex\auth.json`:
+
+```json
+{
+  "auth_mode": "apikey",
+  "OPENAI_API_KEY": "YOUR_UPSTREAM_API_KEY"
+}
+```
+
+The GUI writes both files for you in `Codex CLI/Desktop` mode. It uses the selected `Codex Model` entry's upstream API key as `OPENAI_API_KEY`, while the proxy still uses SHTUClaudeProxy's own model table when forwarding requests. If a configured model uses `api_format: "chat_completions"`, Codex still sends Responses requests to the proxy; the proxy converts them to Chat Completions before calling that upstream.
+
+### MCP and Tool Use
+
+Codex MCP servers are configured in Codex itself, not in SHTUClaudeProxy. The proxy only sees the model-facing Responses request that Codex produces after loading MCP tools.
+
+Supported v3.2.20 tool flow:
+
+```text
+Codex MCP server
+  -> Codex Responses tools
+  -> SHTUClaudeProxy /v1/responses
+  -> upstream Responses function_call, or converted Chat Completions tool_calls
+  -> SHTUClaudeProxy Responses function_call events
+  -> Codex executes the MCP tool
+  -> Codex sends function_call_output on the next /v1/responses request
+```
+
+This means MCP tool definitions and `function_call_output` history are preserved for Responses upstreams and converted for Chat Completions upstreams.
+
+Codex skills are also client-side. As long as Codex turns a skill into prompt context, MCP tools, or Responses tool definitions, SHTUClaudeProxy preserves that context and tool flow through the same `/v1/responses` path.
 
 ## Multiple Models
 
@@ -707,3 +809,5 @@ Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Respons
 ## License
 
 MIT License. See `LICENSE`.
+
+

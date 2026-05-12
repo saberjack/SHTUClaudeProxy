@@ -29,6 +29,7 @@ if (-not $OneFileOnly) {
     --windowed `
     --add-data "proxy.py;." `
     --add-data "config_store.py;." `
+    --add-data "safe_io.py;." `
     app.py
 
   Compress-Archive `
@@ -51,6 +52,7 @@ if (-not $OneDirOnly) {
     --windowed `
     --add-data "proxy.py;." `
     --add-data "config_store.py;." `
+    --add-data "safe_io.py;." `
     app.py
 
   Copy-Item `
