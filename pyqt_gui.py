@@ -350,7 +350,7 @@ class FocusGlowLineEdit(QLineEdit):
 
 class FocusWheelComboBox(QComboBox):
     def wheelEvent(self, event) -> None:  # noqa: N802
-        if self.hasFocus() or self.view().isVisible():
+        if self.view().isVisible():
             super().wheelEvent(event)
         else:
             event.ignore()
@@ -390,7 +390,7 @@ def build_app_icon() -> QIcon:
 class IosProxyApp(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SHTUCodeProxy 4.1.0")
+        self.setWindowTitle("SHTUCodeProxy 4.1.1")
         self.setWindowIcon(build_app_icon())
         self.resize(1420, 960)
         self.setMinimumSize(1220, 780)
@@ -443,7 +443,7 @@ class IosProxyApp(QMainWindow):
         nav_layout = QHBoxLayout(nav)
         nav_layout.setContentsMargins(24, 12, 24, 12)
         title_box = QVBoxLayout()
-        title = QLabel("SHTUCodeProxy 4.1.0")
+        title = QLabel("SHTUCodeProxy 4.1.1")
         title.setObjectName("WindowTitle")
         subtitle = QLabel("Claude Code and Codex local bridge")
         subtitle.setObjectName("WindowSubtitle")
@@ -639,22 +639,20 @@ class IosProxyApp(QMainWindow):
         main.addLayout(bottom)
 
         advanced = self.group_card("Advanced / Optional", compact=True)
-        advanced_layout = QGridLayout(advanced)
+        advanced_layout = QHBoxLayout(advanced)
         advanced_layout.setContentsMargins(16, 18, 16, 12)
-        advanced_layout.setHorizontalSpacing(10)
-        advanced_layout.setVerticalSpacing(0)
+        advanced_layout.setSpacing(10)
         advanced_hint = QLabel("Optional: install a manual PowerShell launcher or copy env vars. Most users do not need these.")
         advanced_hint.setObjectName("SectionHint")
         advanced_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        advanced_buttons = QHBoxLayout()
-        advanced_buttons.setSpacing(10)
-        advanced_buttons.addWidget(self.button("Copy Claude Config", self.copy_claude_config, kind="neutral"))
-        advanced_buttons.addWidget(self.button("Install Launch Script", self.install_launch_script, kind="neutral"))
-        advanced_layout.addWidget(advanced_hint, 0, 0, alignment=Qt.AlignVCenter)
-        advanced_layout.addLayout(advanced_buttons, 0, 1, alignment=Qt.AlignCenter)
-        advanced_layout.setColumnStretch(0, 1)
-        advanced_layout.setColumnStretch(1, 0)
-        advanced_layout.setColumnStretch(2, 1)
+        advanced_button_frame = QFrame()
+        advanced_button_layout = QHBoxLayout(advanced_button_frame)
+        advanced_button_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_button_layout.setSpacing(10)
+        advanced_button_layout.addWidget(self.button("Copy Claude Config", self.copy_claude_config, kind="neutral"))
+        advanced_button_layout.addWidget(self.button("Install Launch Script", self.install_launch_script, kind="neutral"))
+        advanced_layout.addWidget(advanced_hint, 1, alignment=Qt.AlignVCenter)
+        advanced_layout.addWidget(advanced_button_frame, 0, alignment=Qt.AlignRight | Qt.AlignVCenter)
         advanced.setMaximumHeight(86)
         main.addWidget(advanced)
 

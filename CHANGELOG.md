@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## v4.1.1 - 2026-05-13
+
+GUI interaction polish release.
+
+### Fixed
+
+- Kept Advanced / Optional action buttons in the right-side area while aligning them vertically in the compact card.
+- Prevented combo boxes from changing values on mouse wheel unless the dropdown list is explicitly open.
+
 ## v4.1.0 - 2026-05-13
 
 Stable PyQt5 iOS-style GUI release.
