@@ -51,6 +51,7 @@ def make_config(tmpdir: Path) -> AppConfig:
         claude_settings_path=str(tmpdir / ".claude" / "settings.json"),
         codex_config_path=str(tmpdir / ".codex" / "config.toml"),
         codex_auth_path=str(tmpdir / ".codex" / "auth.json"),
+        diagnostic_logging=False,
         models=[model],
     )
 
@@ -282,6 +283,7 @@ def exercise_model_suffix_routing() -> None:
         claude_settings_path="/tmp/settings.json",
         codex_config_path="/tmp/codex-config.toml",
         codex_auth_path="/tmp/codex-auth.json",
+        diagnostic_logging=False,
         models=[default_model, haiku_model, sonnet_alias, direct_deepseek],
     )
 

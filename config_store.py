@@ -82,6 +82,7 @@ class AppConfig:
     claude_settings_path: str
     codex_config_path: str
     codex_auth_path: str
+    diagnostic_logging: bool
     models: List[ModelConfig]
 
     @classmethod
@@ -98,6 +99,7 @@ class AppConfig:
             claude_settings_path=default_claude_settings_path(),
             codex_config_path=default_codex_config_path(),
             codex_auth_path=default_codex_auth_path(),
+            diagnostic_logging=False,
             models=[
                 ModelConfig(
                     name="Default GPT-5.5",
@@ -136,6 +138,7 @@ class AppConfig:
             claude_settings_path=portable_settings_path(str(data.get("claude_settings_path") or default.claude_settings_path)),
             codex_config_path=portable_codex_config_path(str(data.get("codex_config_path") or default.codex_config_path)),
             codex_auth_path=portable_codex_auth_path(str(data.get("codex_auth_path") or default.codex_auth_path)),
+            diagnostic_logging=bool(data.get("diagnostic_logging", default.diagnostic_logging)),
             models=models or default.models,
         )
 
@@ -152,6 +155,7 @@ class AppConfig:
             "claude_settings_path": self.claude_settings_path,
             "codex_config_path": self.codex_config_path,
             "codex_auth_path": self.codex_auth_path,
+            "diagnostic_logging": self.diagnostic_logging,
             "models": [model.to_dict() for model in self.models],
         }
 

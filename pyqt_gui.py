@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import datetime as _dt
 import json
+import os
 import socket
 import sys
 import threading
 import ctypes
+import traceback
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import QEvent, Qt, QTimer, qInstallMessageHandler
 from PyQt5.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -37,6 +41,47 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+APP_VERSION = "4.2.1"
+DIAGNOSTICS_ENABLED = (
+    os.getenv("SHTUCODEPROXY_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+    or "diagnostic" in Path(sys.argv[0]).stem.lower()
+)
+DISABLE_QT_GRAPHICS_EFFECTS = os.getenv("SHTUCODEPROXY_ENABLE_QT_EFFECTS", "").strip().lower() not in {"1", "true", "yes", "on"}
+DEBUG_LOG_PATH = Path.home() / "SHTUCodeProxy-debug.log"
+
+
+def debug_log(message: str) -> None:
+    if not DIAGNOSTICS_ENABLED:
+        return
+    try:
+        timestamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as log_file:
+            log_file.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        pass
+
+
+def install_diagnostics() -> None:
+    global DIAGNOSTICS_ENABLED
+    if not DIAGNOSTICS_ENABLED:
+        try:
+            DIAGNOSTICS_ENABLED = bool(load_config().diagnostic_logging)
+        except Exception:
+            DIAGNOSTICS_ENABLED = False
+    if not DIAGNOSTICS_ENABLED:
+        return
+    def exception_hook(exc_type, exc_value, exc_traceback) -> None:
+        debug_log("UNHANDLED PYTHON EXCEPTION")
+        debug_log("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)).rstrip())
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+    def qt_message_handler(mode, context, message) -> None:
+        debug_log(f"QT MESSAGE mode={mode} file={context.file} line={context.line}: {message}")
+
+    sys.excepthook = exception_hook
+    qInstallMessageHandler(qt_message_handler)
+    debug_log(f"Diagnostics installed version={APP_VERSION} argv={sys.argv}")
 
 import cli
 import proxy
@@ -303,6 +348,25 @@ QLineEdit[readOnly="true"] {
   color: rgba(60, 60, 67, 153);
 }
 
+QCheckBox {
+  color: rgba(60, 60, 67, 180);
+  font-weight: 600;
+  background: transparent;
+}
+
+QCheckBox::indicator {
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1px solid #C7C7CC;
+  background: rgba(255, 255, 255, 220);
+}
+
+QCheckBox::indicator:checked {
+  border: 1px solid #007AFF;
+  background: #007AFF;
+}
+
 QComboBox::drop-down {
   width: 26px;
   border: 0px;
@@ -372,18 +436,31 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 class FocusGlowLineEdit(QLineEdit):
     def __init__(self, text: str = "") -> None:
         super().__init__(text)
-        self._glow = QGraphicsDropShadowEffect(self)
-        self._glow.setBlurRadius(16)
-        self._glow.setOffset(0, 0)
-        self._glow.setColor(QColor(0, 122, 255, 70))
+        self.setAttribute(Qt.WA_MacShowFocusRect, False)
+
+    def _label(self) -> str:
+        name = self.objectName() or "unnamed"
+        return f"{name}@{hex(id(self))}"
 
     def focusInEvent(self, event) -> None:  # noqa: N802
+        debug_log(f"lineedit focus in {self._label()}")
         super().focusInEvent(event)
-        self.setGraphicsEffect(self._glow)
 
     def focusOutEvent(self, event) -> None:  # noqa: N802
+        debug_log(f"lineedit focus out {self._label()}")
         super().focusOutEvent(event)
-        self.setGraphicsEffect(None)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        debug_log(f"lineedit mouse press {self._label()} button={event.button()}")
+        super().mousePressEvent(event)
+
+    def inputMethodEvent(self, event) -> None:  # noqa: N802
+        debug_log(f"lineedit input method {self._label()} commit={event.commitString()!r}")
+        super().inputMethodEvent(event)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        debug_log(f"lineedit close {self._label()}")
+        super().closeEvent(event)
 
 
 class FocusWheelComboBox(QComboBox):
@@ -392,6 +469,24 @@ class FocusWheelComboBox(QComboBox):
             super().wheelEvent(event)
         else:
             event.ignore()
+
+
+class DiagnosticEventFilter(QWidget):
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        event_type = event.type()
+        if event_type in (QEvent.ApplicationActivate, QEvent.ApplicationDeactivate):
+            debug_log(f"app event type={int(event_type)}")
+        elif event_type in (QEvent.WindowActivate, QEvent.WindowDeactivate):
+            debug_log(f"window event type={int(event_type)} widget={watched.objectName() or watched.__class__.__name__}")
+        elif event_type == QEvent.FocusIn:
+            debug_log(f"focus in widget={watched.objectName() or watched.__class__.__name__}")
+        elif event_type == QEvent.FocusOut:
+            debug_log(f"focus out widget={watched.objectName() or watched.__class__.__name__}")
+        elif event_type == QEvent.MouseButtonPress:
+            debug_log(f"mouse press widget={watched.objectName() or watched.__class__.__name__}")
+        elif event_type == QEvent.InputMethod:
+            debug_log(f"input method widget={watched.objectName() or watched.__class__.__name__}")
+        return super().eventFilter(watched, event)
 
 
 def resource_path(*parts: str) -> Path:
@@ -442,7 +537,8 @@ def build_app_icon() -> QIcon:
 class IosProxyApp(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SHTUCodeProxy 4.2.0")
+        self.setWindowTitle(f"SHTUCodeProxy {APP_VERSION}")
+        self.setObjectName("MainWindow")
         self.setWindowIcon(build_app_icon())
         self.resize(1420, 960)
         self.setMinimumSize(1220, 780)
@@ -455,6 +551,7 @@ class IosProxyApp(QMainWindow):
         self.selected_index: int | None = None
         self.danger_sandbox_confirmed = False
         self.model_env_combos: dict[str, QComboBox] = {}
+        debug_log("main window initializing")
 
         self.build_ui()
         self.refresh_model_list()
@@ -463,8 +560,11 @@ class IosProxyApp(QMainWindow):
         self.status_timer.timeout.connect(self.refresh_connection_status)
         self.status_timer.start(5000)
         QTimer.singleShot(300, self.show_first_run_tip)
+        debug_log("main window initialized")
 
     def add_shadow(self, widget: QWidget, blur: int = 20, y: int = 2) -> None:
+        if DISABLE_QT_GRAPHICS_EFFECTS:
+            return
         shadow = QGraphicsDropShadowEffect(widget)
         shadow.setBlurRadius(blur)
         shadow.setOffset(0, y)
@@ -652,12 +752,18 @@ class IosProxyApp(QMainWindow):
         edit_layout = QGridLayout(edit_group)
         edit_layout.setContentsMargins(16, 24, 16, 16)
         self.name_edit = FocusGlowLineEdit()
+        self.name_edit.setObjectName("model_name_edit")
         self.model_id_edit = FocusGlowLineEdit()
+        self.model_id_edit.setObjectName("model_id_edit")
         self.base_url_edit = FocusGlowLineEdit()
+        self.base_url_edit.setObjectName("model_base_url_edit")
         self.api_key_edit = FocusGlowLineEdit()
+        self.api_key_edit.setObjectName("model_api_key_edit")
         self.api_key_edit.setEchoMode(QLineEdit.Password)
         self.upstream_model_edit = FocusGlowLineEdit()
+        self.upstream_model_edit.setObjectName("model_upstream_model_edit")
         self.api_format_combo = FocusWheelComboBox()
+        self.api_format_combo.setObjectName("model_api_format_combo")
         self.api_format_combo.addItems(("responses", "chat_completions"))
         self.api_format_combo.currentTextChanged.connect(self.on_api_format_changed)
         for row, (label, widget) in enumerate((
@@ -706,6 +812,9 @@ class IosProxyApp(QMainWindow):
         advanced_hint.setObjectName("SectionHint")
         advanced_hint.setWordWrap(True)
         advanced_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.diagnostic_logging_check = QCheckBox("Diagnostic logging")
+        self.diagnostic_logging_check.setToolTip(f"Writes detailed UI diagnostics to {DEBUG_LOG_PATH}. Keep it off unless debugging crashes.")
+        self.diagnostic_logging_check.setChecked(bool(self.config_data.diagnostic_logging or DIAGNOSTICS_ENABLED))
         advanced_button_frame = QFrame()
         advanced_button_frame.setObjectName("AdvancedActions")
         advanced_button_frame.setMinimumSize(368, 42)
@@ -716,6 +825,7 @@ class IosProxyApp(QMainWindow):
         advanced_button_layout.addWidget(self.button("Copy Claude Config", self.copy_claude_config, kind="optional"))
         advanced_button_layout.addWidget(self.button("Install Launch Script", self.install_launch_script, kind="optional"))
         advanced_body.addWidget(advanced_hint, 1, alignment=Qt.AlignVCenter)
+        advanced_body.addWidget(self.diagnostic_logging_check, 0, alignment=Qt.AlignVCenter)
         advanced_body.addWidget(advanced_button_frame, 0, alignment=Qt.AlignRight | Qt.AlignTop)
         advanced_layout.addLayout(advanced_body)
         advanced.setMinimumHeight(96)
@@ -809,6 +919,7 @@ class IosProxyApp(QMainWindow):
     def on_model_table_selection_changed(self) -> None:
         rows = self.model_table.selectionModel().selectedRows()
         if rows:
+            debug_log(f"model table selection changed row={rows[0].row()}")
             self.load_model(rows[0].row())
 
     def refresh_model_env_choices(self) -> None:
@@ -865,6 +976,7 @@ class IosProxyApp(QMainWindow):
             return
         self.selected_index = index
         model = self.config_data.models[index]
+        debug_log(f"load model index={index} model_id={model.model_id!r} api_format={getattr(model, 'api_format', '')!r}")
         self.name_edit.setText(model.name)
         self.model_id_edit.setText(model.model_id)
         self.base_url_edit.setText(model.base_url)
@@ -873,6 +985,7 @@ class IosProxyApp(QMainWindow):
         self.api_format_combo.setCurrentText(getattr(model, "api_format", DEFAULT_API_FORMAT) or DEFAULT_API_FORMAT)
 
     def on_api_format_changed(self, api_format: str) -> None:
+        debug_log(f"api format changed value={api_format!r}")
         if api_format == "responses":
             self.base_url_edit.setText(DEFAULT_RESPONSES_URL)
         elif api_format == "chat_completions":
@@ -897,6 +1010,7 @@ class IosProxyApp(QMainWindow):
         if self.selected_index is None:
             return True
         old_model_id = self.config_data.models[self.selected_index].model_id
+        debug_log(f"apply model selected_index={self.selected_index} old_model_id={old_model_id!r}")
         model = ModelConfig(
             self.name_edit.text().strip() or self.model_id_edit.text().strip(),
             self.model_id_edit.text().strip(),
@@ -964,6 +1078,7 @@ class IosProxyApp(QMainWindow):
         self.config_data.claude_settings_path = portable_settings_path(self.claude_settings_path_edit.text().strip() or default_claude_settings_path())
         self.config_data.codex_config_path = portable_codex_config_path(self.codex_config_path_edit.text().strip() or default_codex_config_path())
         self.config_data.codex_auth_path = portable_codex_auth_path(self.codex_auth_path_edit.text().strip() or default_codex_auth_path())
+        self.config_data.diagnostic_logging = self.diagnostic_logging_check.isChecked()
         return True
 
     def save(self) -> None:
@@ -1192,6 +1307,7 @@ class IosProxyApp(QMainWindow):
 
 
 def run() -> int:
+    install_diagnostics()
     set_windows_app_id()
     app = QApplication(sys.argv)
     app.setApplicationName("SHTUCodeProxy")
@@ -1199,11 +1315,15 @@ def run() -> int:
     app.setOrganizationName("SHTU")
     if hasattr(app, "setDesktopFileName"):
         app.setDesktopFileName("shtucodeproxy")
+    event_filter = DiagnosticEventFilter()
+    app.installEventFilter(event_filter)
     app_icon = build_app_icon()
     app.setWindowIcon(app_icon)
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))
     window = IosProxyApp()
+    window._diagnostic_event_filter = event_filter
     window.setWindowIcon(app_icon)
     window.show()
+    debug_log(f"window shown debug_log={DEBUG_LOG_PATH}")
     return app.exec_()
