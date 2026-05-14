@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -185,44 +184,7 @@ def config_path() -> Path:
     return app_dir() / "config.json"
 
 
-def token_from_api_notes(path: Path = Path("D:/litellm/api.txt")) -> str:
-    if not path.exists():
-        return ""
-    text = path.read_text(encoding="utf-8-sig")
-    match = re.search(r"Authorization:\s*Bearer\s+([A-Za-z0-9._-]+)", text)
-    return match.group(1) if match else ""
-
-
-def tokens_from_api_notes(path: Path = Path("D:/litellm/api.txt")) -> Dict[str, str]:
-    if not path.exists():
-        return {}
-    text = path.read_text(encoding="utf-8-sig")
-    labels = (
-        ("GLM 5.1", "glm-chat"),
-        ("deepv4", "deepseek-chat"),
-        ("qwen3.5", "qwen-instruct"),
-    )
-    tokens: Dict[str, str] = {}
-    for index, (label, model_id) in enumerate(labels):
-        start = text.find(f"{label}:")
-        if start < 0:
-            continue
-        end_candidates = [
-            text.find(f"{next_label}:", start + len(label) + 1)
-            for next_label, _ in labels[index + 1:]
-        ]
-        end_candidates = [position for position in end_candidates if position >= 0]
-        section = text[start:min(end_candidates)] if end_candidates else text[start:]
-        match = re.search(r"Authorization:\s*Bearer\s+([A-Za-z0-9._-]+)", section)
-        if match:
-            tokens[model_id] = match.group(1)
-    return tokens
-
-
 def ensure_builtin_model_routes(config: AppConfig) -> AppConfig:
-    api_key = token_from_api_notes()
-    api_keys = tokens_from_api_notes()
-    noted_keys = set(api_keys.values())
     existing = {model.model_id: model for model in config.models}
     routes = [
         ("GLM Chat", "glm-chat", DEFAULT_CHAT_COMPLETIONS_URL, "chat_completions"),
@@ -230,17 +192,13 @@ def ensure_builtin_model_routes(config: AppConfig) -> AppConfig:
         ("Qwen Instruct", "qwen-instruct", f"{DEFAULT_CHAT_COMPLETIONS_URL}/chat/completions", "chat_completions"),
     ]
     for name, model_id, base_url, api_format in routes:
-        route_api_key = api_keys.get(model_id) or api_key
         if model_id in existing:
-            model = existing[model_id]
-            if route_api_key and (not model.api_key or (model.api_key in noted_keys and model.api_key != route_api_key)):
-                model.api_key = route_api_key
             continue
         config.models.append(ModelConfig(
             name=name,
             model_id=model_id,
             base_url=base_url,
-            api_key=route_api_key,
+            api_key="",
             upstream_model=model_id,
             api_format=api_format,
         ))

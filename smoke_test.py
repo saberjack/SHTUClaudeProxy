@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import cli
 from safe_io import restore_latest_backup, snapshot_original_file
-from config_store import AppConfig, MODEL_ENV_KEYS, ModelConfig, save_config, tokens_from_api_notes
+from config_store import AppConfig, MODEL_ENV_KEYS, ModelConfig, save_config
 from platform_utils import launch_script_text, portable_claude_path, portable_settings_path
 from proxy import (
     anthropic_messages_to_chat_completions,
@@ -189,26 +189,6 @@ def exercise_chat_completion_json_to_responses() -> None:
     assert_true("tool_results" not in cleaned, "pseudo tool results should be stripped")
     assert_true(invoke2_calls[0]["name"] == "shell", "tool_invoke pseudo tag should map bash to shell")
     assert_true(json.loads(invoke2_calls[0]["arguments"])["command"][-1] == "pwd", "tool_invoke pseudo command mismatch")
-
-
-def exercise_api_notes_token_parsing(tmpdir: Path) -> None:
-    notes = tmpdir / "api.txt"
-    notes.write_text("""
-GLM 5.1:
-curl -H 'Authorization: Bearer glm-key' -d '{}'
-
-
-deepv4:
-curl -H 'Authorization: Bearer deep-key' -d '{}'
-
-
-qwen3.5:
-curl -H 'Authorization: Bearer qwen-key' -d '{}'
-""", encoding="utf-8")
-    tokens = tokens_from_api_notes(notes)
-    assert_true(tokens["glm-chat"] == "glm-key", "glm token parse mismatch")
-    assert_true(tokens["deepseek-chat"] == "deep-key", "deepseek token parse mismatch")
-    assert_true(tokens["qwen-instruct"] == "qwen-key", "qwen token parse mismatch")
 
 
 def exercise_mixed_tool_result_ordering() -> None:
@@ -773,7 +753,6 @@ def main() -> int:
         assert_true(portable_settings_path("").endswith(str(Path(".claude") / "settings.json")), "settings fallback mismatch")
         exercise_tool_call_translation()
         exercise_chat_completion_json_to_responses()
-        exercise_api_notes_token_parsing(tmpdir)
         exercise_mixed_tool_result_ordering()
         exercise_model_suffix_routing()
         exercise_count_tokens_estimate()
