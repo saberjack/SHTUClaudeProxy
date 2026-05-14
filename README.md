@@ -1,4 +1,8 @@
 # SHTUCodeProxy
+让 Claude Code、Codex 、各种支持自定义API的工具与校园 GenAI API 真正连起来
+面向真实 AI 编程工作流的本地协议适配层,把模型路由、客户端配置、工具调用、多轮上下文、配置恢复和跨平台打包整合在一起，让校园 GenAI API 更容易进入日常研发和学习场景。
+Enable Claude Code, Codex, and various tools that support custom APIs to truly connect with the Campus GenAI API.
+A local protocol adaptation layer for real-world AI programming workflows, integrating model routing, client configuration, tool calling, multi-turn context, configuration recovery, and cross-platform packaging — making the Campus GenAI API more accessible in everyday development and learning scenarios.
 
 > **Important:** GPT-series models should use the `responses` API Format. Chat-only models such as GLM, Qwen, or DeepSeek can use `chat_completions` when their upstream endpoint requires it.
 
@@ -17,8 +21,6 @@ The PyQt5 desktop app can save model settings, write Claude Code and Codex clien
 
 This tool was created by **sunyb, ShanghaiTech University Library and Information Center** for internal campus use. It is not an official Anthropic or OpenAI product.
 
-> Note: API keys are stored only in local configuration files. Do not commit or share your local `config.json`, Claude settings, Codex auth file, logs, or screenshots containing keys.
-
 <img width="1536" height="1024" alt="myImage (2)" src="https://github.com/user-attachments/assets/97a87f8a-a5ee-40fd-937c-d721abf662a1" />
 
 <img width="1422" height="992" alt="image" src="https://github.com/user-attachments/assets/41a9add0-c71b-4670-8346-549053f8bd2a" />
@@ -36,72 +38,11 @@ CodeX Desktop
 Claud Desktop
 <img width="1200" height="800" alt="image" src="https://github.com/user-attachments/assets/61440724-7080-4c1e-b43c-d4021eda6abe" />
 
-
-## What It Does
-
-Claude Code expects an Anthropic-compatible API endpoint such as:
-
-```text
-POST /v1/messages
-```
-
-ShanghaiTech GenAI Response API returns OpenAI Responses-style streaming events such as:
-
-```text
-event: response.output_text.delta
-```
-
-Codex clients expect an OpenAI Responses-compatible endpoint such as:
-
-```text
-POST /v1/responses
-```
-
-SHTUCodeProxy bridges both client formats:
-
-```text
-Claude Code
-  -> Anthropic Messages request
-  -> SHTUCodeProxy on 127.0.0.1:8082
-  -> GenAI Response API
-  -> OpenAI Responses SSE
-  -> Anthropic-style SSE
-  -> Claude Code
-
-Codex CLI/Desktop
-  -> OpenAI Responses request
-  -> SHTUCodeProxy on 127.0.0.1:8082
-  -> Responses or Chat Completions upstream
-  -> OpenAI Responses SSE
-  -> Codex
-```
-
-## Features
-
-- PyQt5 desktop GUI for Windows and Linux release packages, plus source/CLI mode for advanced users.
-- Guided quick-start GUI with `Save Config`, `Write Client Config`, `Save + Connect`, and manual proxy controls.
-- Full-window scrolling for smaller displays.
-- Local Anthropic-compatible endpoint for Claude Code.
-- Local OpenAI Responses-compatible endpoint for Codex CLI and Codex Desktop.
-- Multiple model configurations.
-- Per-Claude-role model routing for `ANTHROPIC_MODEL`, Haiku, Sonnet, Opus, and reasoning model variables.
-- Per-model settings:
-  - display name
-  - Claude Code model ID
-  - GenAI Response API base URL
-  - API key
-  - upstream model ID
-  - upstream API format (`responses` or `chat_completions`)
-- One-click writing of Claude Code `settings.json`.
-- One-click Claude Code launch with proxy environment.
-- Auto-detection of npm-installed Claude Code.
-- Portable Windows and Linux release packages; source mode is available for developers and macOS users.
-- PyInstaller build scripts for Windows and Linux release packaging.
-- Bidirectional tool-call translation for Claude Code `tool_use/tool_result` and upstream `tool_calls/function_call` protocols.
-
 ## Intended Audience
 
-This project is intended for ShanghaiTech University users who have access to the campus GenAI Response API and want to use that API from Claude Code.
+This project is intended for ShanghaiTech University users who have access to the campus GenAI API.
+
+No testing has been done on whether it is effective with third-party APIs.
 
 It is not an official Anthropic product, not an OpenAI product, and not a general-purpose full Anthropic API emulator.
 
@@ -260,13 +201,13 @@ You can change these if your environment is different.
 
 ### 4. Configure a Model
 
-For each model entry:
+example:
 
 | Field | Meaning | Example |
 | --- | --- | --- |
-| Display Name | Friendly name shown in the GUI | ShanghaiTech GPT-5.5 |
+| Display Name | Friendly name shown in the GUI | ShanghaiTech University GPT-5.5 |
 | Model ID | Model name Claude Code or Codex will request | GPT-5.5 |
-| Base URL | Campus GenAI API endpoint | chat_completions: https://genaiapi.shanghaitech.edu.cn/api/v1/start; responses: https://genaiapi.shanghaitech.edu.cn/api/v1/response |
+| Base URL | Campus GenAI API endpoint | chat_completions: https://genaiapi.shanghaitech.edu.cn/api/v1/start;responses: https://genaiapi.shanghaitech.edu.cn/api/v1/response |
 | API Key | Your campus API key | keep private |
 | Upstream Model | Model ID sent to GenAI Response API | GPT-5.5 |
 
@@ -575,20 +516,6 @@ For each request, the proxy looks up that model ID and forwards using the config
 - Do not point generic clients at `http://127.0.0.1:8082/v1/chat/completions`; SHTUCodeProxy converts to upstream Chat Completions internally when a model route is configured as `chat_completions`, but it does not expose a local Chat Completions endpoint.
 - Make sure SHTUCodeProxy is running and the GUI shows the configured port is listening before sending generic API requests.
 
-## Multiple Models
-
-You can add multiple model routes.
-
-Example:
-
-| Model ID for Claude Code | Upstream Model | Base URL |
-| --- | --- | --- |
-| GPT-5.5 | GPT-5.5 | https://genaiapi.shanghaitech.edu.cn/api/v1/start |
-| GPT-5.5-fast | GPT-5.5 | another compatible endpoint |
-| GPT-5.5-reasoning | GPT-5.5 | another compatible endpoint |
-
-Claude Code selects a route by the model ID it sends. The proxy then forwards to the configured upstream `base_url`, `api_key`, and `upstream_model`.
-
 ## Configuration Files
 
 ### App Config
@@ -600,16 +527,6 @@ Stored locally at:
 ```
 
 This file may contain your API key in plaintext. Do not commit it.
-
-### Claude Code Settings
-
-Usually stored at:
-
-```text
-%USERPROFILE%\.claude\settings.json
-```
-
-The GUI writes only the `env` fields needed by Claude Code and preserves other JSON fields when possible.
 
 ## Build from Source
 
@@ -816,8 +733,6 @@ Run a quick scan for keys before pushing.
 ## Credits
 
 Created by **sunyb**, ShanghaiTech University Library and Information Center.
-
-Purpose: provide a convenient local bridge for ShanghaiTech campus GenAI Response API access from Claude Code.
 
 ## License
 
