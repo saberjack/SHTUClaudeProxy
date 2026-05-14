@@ -31,12 +31,49 @@ fi
 
 mkdir -p release
 
+PYINSTALLER_LINUX_BINARIES=()
+if [[ "$OS_NAME" == "linux" ]]; then
+  collect_library() {
+    local name="$1"
+    local path=""
+    path="$(ldconfig -p 2>/dev/null | awk -v lib="$name" '$1 == lib { print $NF; exit }' || true)"
+    if [[ -n "$path" && -f "$path" ]]; then
+      PYINSTALLER_LINUX_BINARIES+=(--add-binary "$path:.")
+    fi
+  }
+
+  for library in \
+    libGL.so.1 \
+    libEGL.so.1 \
+    libGLdispatch.so.0 \
+    libGLX.so.0 \
+    libOpenGL.so.0 \
+    libglib-2.0.so.0 \
+    libX11.so.6 \
+    libXext.so.6 \
+    libXrender.so.1 \
+    libxcb.so.1 \
+    libxcb-cursor.so.0 \
+    libxcb-icccm.so.4 \
+    libxcb-image.so.0 \
+    libxcb-keysyms.so.1 \
+    libxcb-randr.so.0 \
+    libxcb-render-util.so.0 \
+    libxcb-shape.so.0 \
+    libxcb-xinerama.so.0 \
+    libxkbcommon.so.0 \
+    libxkbcommon-x11.so.0; do
+    collect_library "$library"
+  done
+fi
+
 if [[ "$ONE_FILE_ONLY" != "1" ]]; then
   python3 -m PyInstaller \
     --noconfirm \
     --clean \
     --name "$FOLDER_NAME" \
     --icon "assets/shtucodeproxy.ico" \
+    "${PYINSTALLER_LINUX_BINARIES[@]}" \
     --add-data "assets:assets" \
     --add-data "proxy.py:." \
     --add-data "pyqt_gui.py:." \
@@ -87,6 +124,7 @@ if [[ "$ONE_DIR_ONLY" != "1" ]]; then
     --onefile \
     --name "$APP_NAME" \
     --icon "assets/shtucodeproxy.ico" \
+    "${PYINSTALLER_LINUX_BINARIES[@]}" \
     --add-data "assets:assets" \
     --add-data "proxy.py:." \
     --add-data "pyqt_gui.py:." \

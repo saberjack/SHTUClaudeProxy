@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## v4.2.5 - 2026-05-14
+
+Linux package runtime dependency fix.
+
+### Fixed
+
+- Bundled Linux OpenGL/Qt runtime libraries needed by PyQt5, including `libGL.so.1`, to avoid startup failures on minimal Linux desktops.
+- Expanded Linux release workflow system libraries so generated packages include the expected Qt/XCB runtime dependencies.
+
 ## v4.2.4 - 2026-05-14
 
 Model routing persistence fix.
