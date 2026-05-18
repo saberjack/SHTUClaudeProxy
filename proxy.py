@@ -14,6 +14,7 @@ import ast
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -71,6 +72,24 @@ def parse_pseudo_attributes(value: str) -> Dict[str, str]:
     return {name: raw.strip() for name, _, raw in PSEUDO_ATTR_RE.findall(value)}
 
 
+def shell_command_argv(command: str) -> List[str]:
+    if os.name == "nt":
+        return ["powershell.exe", "-Command", command]
+    return ["bash", "-lc", command]
+
+
+def is_direct_shell_executable(executable: str) -> bool:
+    if os.name == "nt":
+        return executable in {"powershell.exe", "powershell", "pwsh", "pwsh.exe", "cmd", "cmd.exe", "python", "python.exe", "node", "node.exe"}
+    return executable in {"bash", "sh", "zsh", "fish", "python", "python3", "node"}
+
+
+def shell_join_command_parts(command_parts: List[str]) -> str:
+    if os.name == "nt":
+        return subprocess.list2cmdline(command_parts)
+    return shlex.join(command_parts)
+
+
 def best_tool_name(requested_name: str, arguments: Dict[str, Any], tool_names: List[str], preferred_shell: Optional[str]) -> str:
     if requested_name in tool_names:
         return requested_name
@@ -98,7 +117,7 @@ def coerce_pseudo_arguments(tool_name: str, arguments: Dict[str, Any], preferred
         command = arguments.get("command")
         if isinstance(command, str):
             arguments = dict(arguments)
-            arguments["command"] = ["powershell.exe", "-Command", command]
+            arguments["command"] = shell_command_argv(command)
     return arguments
 
 
@@ -983,18 +1002,17 @@ def codex_function_call_item(tool_call: Dict[str, Any], offset: int = 0) -> Dict
     if normalized_name == "shell":
         command = arguments.get("command")
         if isinstance(command, str):
-            arguments["command"] = ["powershell.exe", "-Command", command]
+            arguments["command"] = shell_command_argv(command)
         elif isinstance(command, list):
             command_parts = [str(part) for part in command if part is not None]
             executable = command_parts[0].lower() if command_parts else ""
-            direct_executables = {"powershell.exe", "powershell", "pwsh", "pwsh.exe", "cmd", "cmd.exe", "python", "python.exe", "node", "node.exe"}
-            if executable and executable not in direct_executables:
-                joined = subprocess.list2cmdline(command_parts)
-                arguments["command"] = ["powershell.exe", "-Command", joined]
+            if executable and not is_direct_shell_executable(executable):
+                joined = shell_join_command_parts(command_parts)
+                arguments["command"] = shell_command_argv(joined)
         else:
             fallback = arguments.get("arguments")
             if isinstance(fallback, str) and fallback.strip():
-                arguments["command"] = ["powershell.exe", "-Command", fallback]
+                arguments["command"] = shell_command_argv(fallback)
     return {
         "id": tool_call.get("id") or f"fc_proxy_{now_ms()}_{offset}",
         "type": "function_call",

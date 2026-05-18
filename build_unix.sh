@@ -8,6 +8,7 @@ VERSION="$(tr -d '\r\n' < VERSION 2>/dev/null || echo dev)"
 OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH_NAME="$(uname -m)"
 APP_NAME="SHTUCodeProxy-v${VERSION}-${OS_NAME}-${ARCH_NAME}"
+CLI_NAME="shtucodeproxyctl-v${VERSION}-${OS_NAME}-${ARCH_NAME}"
 FOLDER_NAME="SHTUCodeProxy"
 PACKAGE_ROOT="${APP_NAME}-python-launcher"
 
@@ -76,7 +77,9 @@ if [[ "$ONE_FILE_ONLY" != "1" ]]; then
     "${PYINSTALLER_LINUX_BINARIES[@]}" \
     --add-data "assets:assets" \
     --add-data "proxy.py:." \
+    --add-data "cli.py:." \
     --add-data "pyqt_gui.py:." \
+    --add-data "platform_utils.py:." \
     --add-data "config_store.py:." \
     --add-data "safe_io.py:." \
     --add-data "VERSION:." \
@@ -105,6 +108,12 @@ Usage:
 1. Extract this tar.gz package.
 2. Run: python3 run_shtucodeproxy.py
 
+Headless CLI examples:
+- python3 run_shtucodeproxy.py configure-model --model-id glm-chat --api-key YOUR_KEY --upstream-model glm-chat --api-format chat_completions --default --codex
+- python3 run_shtucodeproxy.py start
+- python3 run_shtucodeproxy.py status
+- python3 run_shtucodeproxy.py stop
+
 The bundled SHTUCodeProxy runtime includes Python, PyQt5, and Qt libraries.
 You do not need to install Python packages such as PyQt5 or PyInstaller.
 
@@ -122,12 +131,31 @@ if [[ "$ONE_DIR_ONLY" != "1" ]]; then
     --noconfirm \
     --clean \
     --onefile \
+    --console \
+    --name "$CLI_NAME" \
+    --add-data "proxy.py:." \
+    --add-data "cli.py:." \
+    --add-data "platform_utils.py:." \
+    --add-data "config_store.py:." \
+    --add-data "safe_io.py:." \
+    --add-data "VERSION:." \
+    cli_app.py
+
+  cp "dist/$CLI_NAME" "release/$CLI_NAME"
+  echo "Headless CLI build complete: release/$CLI_NAME"
+
+  python3 -m PyInstaller \
+    --noconfirm \
+    --clean \
+    --onefile \
     --name "$APP_NAME" \
     --icon "assets/shtucodeproxy.ico" \
     "${PYINSTALLER_LINUX_BINARIES[@]}" \
     --add-data "assets:assets" \
     --add-data "proxy.py:." \
+    --add-data "cli.py:." \
     --add-data "pyqt_gui.py:." \
+    --add-data "platform_utils.py:." \
     --add-data "config_store.py:." \
     --add-data "safe_io.py:." \
     --add-data "VERSION:." \

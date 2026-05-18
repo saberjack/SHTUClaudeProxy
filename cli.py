@@ -10,8 +10,8 @@ import tomllib
 from pathlib import Path
 from typing import Dict
 
-from config_store import AppConfig, CODEX_SANDBOX_MODES, DEFAULT_CODEX_SANDBOX_MODE, MODEL_ENV_KEYS, config_path, load_config, save_config
-from platform_utils import launch_script_filename, launch_script_text
+from config_store import AppConfig, CODEX_SANDBOX_MODES, DEFAULT_CHAT_COMPLETIONS_URL, DEFAULT_CODEX_SANDBOX_MODE, DEFAULT_RESPONSES_URL, MODEL_ENV_KEYS, ModelConfig, config_path, load_config, save_config
+from platform_utils import app_dir, launch_script_filename, launch_script_text
 from proxy import ProxyHandler, ThreadingHTTPServer
 from safe_io import atomic_write_text, backup_existing_file, restore_latest_backup, snapshot_original_file
 
@@ -387,6 +387,137 @@ def show_config(config: AppConfig) -> None:
         print(f"  - {model.model_id} -> {model.upstream_model} ({model.api_format}, key={has_key})")
 
 
+def pid_path() -> Path:
+    return app_dir() / "proxy.pid"
+
+
+def log_path() -> Path:
+    return app_dir() / "proxy.log"
+
+
+def process_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def read_proxy_pid() -> int | None:
+    target = pid_path()
+    if not target.exists():
+        return None
+    try:
+        return int(target.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return None
+
+
+def configure_model(args: argparse.Namespace) -> AppConfig:
+    config = load_config()
+    model_id = args.model_id.strip()
+    api_format = args.api_format
+    base_url = args.base_url or (DEFAULT_CHAT_COMPLETIONS_URL if api_format == "chat_completions" else DEFAULT_RESPONSES_URL)
+    upstream_model = args.upstream_model or model_id
+    existing = next((model for model in config.models if model.model_id == model_id), None)
+    if existing:
+        existing.name = args.name or existing.name or model_id
+        existing.base_url = base_url
+        existing.api_key = args.api_key
+        existing.upstream_model = upstream_model
+        existing.api_format = api_format
+    else:
+        config.models.append(ModelConfig(
+            name=args.name or model_id,
+            model_id=model_id,
+            base_url=base_url,
+            api_key=args.api_key,
+            upstream_model=upstream_model,
+            api_format=api_format,
+        ))
+    if args.default:
+        config.default_model_id = model_id
+        config.model_env = {key: model_id for key in MODEL_ENV_KEYS}
+    if args.codex:
+        config.codex_model_id = model_id
+    if args.host:
+        config.host = args.host
+    if args.port:
+        config.port = args.port
+    save_config(config)
+    return config
+
+
+def use_model(model_id: str, *, codex: bool = False, claude: bool = False) -> AppConfig:
+    config = load_config()
+    if not any(model.model_id == model_id for model in config.models):
+        raise ValueError(f"Unknown model id: {model_id}")
+    if not codex and not claude:
+        codex = True
+        claude = True
+    if claude:
+        config.default_model_id = model_id
+        config.model_env = {key: model_id for key in MODEL_ENV_KEYS}
+    if codex:
+        config.codex_model_id = model_id
+    save_config(config)
+    return config
+
+
+def start_background(config: AppConfig) -> None:
+    existing_pid = read_proxy_pid()
+    if existing_pid and process_is_running(existing_pid):
+        print(f"Proxy already running with PID {existing_pid}")
+        return
+    app_dir().mkdir(parents=True, exist_ok=True)
+    stdout = log_path().open("ab")
+    stderr = subprocess.STDOUT
+    command = [sys.executable, "serve"] if getattr(sys, "frozen", False) else [sys.executable, str(Path(__file__).resolve()), "serve"]
+    process = subprocess.Popen(
+        command,
+        cwd=str(Path(__file__).resolve().parent),
+        stdin=subprocess.DEVNULL,
+        stdout=stdout,
+        stderr=stderr,
+        start_new_session=(os.name != "nt"),
+    )
+    stdout.close()
+    pid_path().write_text(str(process.pid), encoding="utf-8")
+    print(f"Started proxy in background: PID {process.pid}")
+    print(f"Proxy URL: http://{config.host}:{config.port}")
+    print(f"Log file: {log_path()}")
+
+
+def stop_background() -> None:
+    pid = read_proxy_pid()
+    if not pid:
+        print("No background proxy PID found")
+        return
+    if not process_is_running(pid):
+        pid_path().unlink(missing_ok=True)
+        print(f"Proxy PID {pid} is not running")
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, text=True, timeout=10)
+    else:
+        os.kill(pid, 15)
+    pid_path().unlink(missing_ok=True)
+    print(f"Stopped proxy PID {pid}")
+
+
+def show_status(config: AppConfig) -> None:
+    pid = read_proxy_pid()
+    running = bool(pid and process_is_running(pid))
+    listening = is_port_listening(config.host, config.port)
+    print(f"Proxy URL: http://{config.host}:{config.port}")
+    print(f"Background PID: {pid or 'none'}")
+    print(f"Background process: {'running' if running else 'stopped'}")
+    print(f"Port listening: {'yes' if listening else 'no'}")
+    print(f"Log file: {log_path()}")
+
+
 def is_port_listening(host: str, port: int) -> bool:
     try:
         with socket.create_connection((host, port), timeout=1):
@@ -444,10 +575,28 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("show-config", help="Show resolved config and model routing")
     subparsers.add_parser("print-env", help="Print shell commands for Claude Code environment variables")
     subparsers.add_parser("write-settings", help="Write Claude Code settings.json env block")
+    configure_parser = subparsers.add_parser("configure-model", help="Create or update one model route without GUI")
+    configure_parser.add_argument("--model-id", required=True, help="Local model id clients will request, e.g. glm-chat")
+    configure_parser.add_argument("--api-key", required=True, help="Upstream API key for this model")
+    configure_parser.add_argument("--upstream-model", help="Upstream provider model name; defaults to --model-id")
+    configure_parser.add_argument("--base-url", help="Upstream API URL; defaults from --api-format")
+    configure_parser.add_argument("--api-format", choices=("responses", "chat_completions"), default="responses")
+    configure_parser.add_argument("--name", help="Display name for show-config")
+    configure_parser.add_argument("--host", help="Proxy listen host, default keeps current config")
+    configure_parser.add_argument("--port", type=int, help="Proxy listen port, default keeps current config")
+    configure_parser.add_argument("--default", action="store_true", help="Use this model for Claude model routing")
+    configure_parser.add_argument("--codex", action="store_true", help="Use this model for Codex config")
+    use_parser = subparsers.add_parser("use-model", help="Switch Claude and/or Codex to an existing model id")
+    use_parser.add_argument("model_id")
+    use_parser.add_argument("--codex", action="store_true", help="Switch Codex only unless --claude is also set")
+    use_parser.add_argument("--claude", action="store_true", help="Switch Claude only unless --codex is also set")
     codex_parser = subparsers.add_parser("write-codex-config", help="Write Codex config.toml Responses provider/profile")
     codex_parser.add_argument("--model", help="Codex model id to write, e.g. glm-chat, deepseek-chat, qwen-instruct")
     subparsers.add_parser("install-launch-script", help="Install claude-shtu launch script")
     subparsers.add_parser("serve", help="Run proxy server without GUI")
+    subparsers.add_parser("start", help="Run proxy server in the background")
+    subparsers.add_parser("stop", help="Stop proxy server started by CLI start")
+    subparsers.add_parser("status", help="Show background proxy and port status")
 
     args = parser.parse_args(argv)
     config = load_config()
@@ -459,6 +608,15 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "write-settings":
         path = write_claude_settings(config)
         print(f"Wrote Claude settings: {path}")
+    elif args.command == "configure-model":
+        config = configure_model(args)
+        print(f"Configured model: {args.model_id}")
+        print(f"Config path: {config_path()}")
+    elif args.command == "use-model":
+        config = use_model(args.model_id, codex=args.codex, claude=args.claude)
+        print(f"Selected model: {args.model_id}")
+        print(f"Claude default: {config.default_model_id}")
+        print(f"Codex model: {config.codex_model_id}")
     elif args.command == "write-codex-config":
         if getattr(args, "model", None):
             config.codex_model_id = args.model
@@ -471,6 +629,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Installed launch script: {path}")
     elif args.command == "serve":
         serve(config)
+    elif args.command == "start":
+        start_background(config)
+    elif args.command == "stop":
+        stop_background()
+    elif args.command == "status":
+        show_status(config)
     else:
         parser.error(f"Unknown command: {args.command}")
     return 0

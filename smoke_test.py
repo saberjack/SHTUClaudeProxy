@@ -2,6 +2,8 @@
 
 import json
 import os
+import subprocess
+import sys
 import shutil
 from pathlib import Path
 from unittest.mock import patch
@@ -28,6 +30,9 @@ from proxy import (
     stop_reason_from_done,
     tool_arguments_json,
 )
+
+
+EXPECTED_SHELL_PREFIX = ["powershell.exe", "-Command"] if os.name == "nt" else ["bash", "-lc"]
 
 
 def make_config(tmpdir: Path) -> AppConfig:
@@ -124,10 +129,14 @@ def exercise_tool_call_translation() -> None:
     shell_item = codex_function_call_item({"name": "shell_exec", "arguments": '{"command":"Write-Output ok"}'})
     shell_args = json.loads(shell_item["arguments"])
     assert_true(shell_item["name"] == "shell", "Codex shell aliases should normalize to shell")
-    assert_true(shell_args["command"] == ["powershell.exe", "-Command", "Write-Output ok"], "Codex shell command should be an argv array")
+    assert_true(shell_args["command"] == [*EXPECTED_SHELL_PREFIX, "Write-Output ok"], "Codex shell command should use the current platform shell")
     echo_item = codex_function_call_item({"name": "shell", "arguments": {"command": ["echo", "sandbox ok"]}})
     echo_args = json.loads(echo_item["arguments"])
-    assert_true(echo_args["command"][0] == "powershell.exe", "bare Windows shell commands should be wrapped through PowerShell")
+    assert_true(echo_args["command"][:2] == EXPECTED_SHELL_PREFIX, "bare shell commands should be wrapped through the current platform shell")
+    with patch("proxy.os.name", "posix"):
+        linux_shell_item = codex_function_call_item({"name": "shell_exec", "arguments": '{"command":"pwd"}'})
+        linux_shell_args = json.loads(linux_shell_item["arguments"])
+        assert_true(linux_shell_args["command"] == ["bash", "-lc", "pwd"], "Linux shell strings must not be wrapped with PowerShell")
 
 
 def exercise_chat_completion_json_to_responses() -> None:
@@ -691,6 +700,38 @@ def exercise_backup_restore(tmpdir: Path) -> None:
     assert_true(not missing.exists(), "restoring originally missing file should remove generated file")
 
 
+def exercise_headless_cli_model_config(tmpdir: Path) -> None:
+    old_env_config = os.environ.get("CLAUDE_RESPONSES_PROXY_CONFIG")
+    os.environ["CLAUDE_RESPONSES_PROXY_CONFIG"] = str(tmpdir / "headless" / "config.json")
+    try:
+        configure_args = [
+            "configure-model",
+            "--model-id", "linux-smoke",
+            "--api-key", "smoke-key",
+            "--upstream-model", "linux-upstream",
+            "--api-format", "chat_completions",
+            "--default",
+            "--codex",
+            "--host", "127.0.0.1",
+            "--port", "19083",
+        ]
+        assert_true(cli.main(configure_args) == 0, "headless configure-model command should succeed")
+        config = load_config(Path(os.environ["CLAUDE_RESPONSES_PROXY_CONFIG"]))
+        model = config.find_model("linux-smoke")
+        assert_true(model.api_key == "smoke-key", "headless CLI should persist the required API key")
+        assert_true(model.upstream_model == "linux-upstream", "headless CLI should persist the upstream model")
+        assert_true(model.api_format == "chat_completions", "headless CLI should persist API format")
+        assert_true(config.default_model_id == "linux-smoke", "headless CLI should switch Claude default model")
+        assert_true(config.codex_model_id == "linux-smoke", "headless CLI should switch Codex model")
+        assert_true(config.port == 19083, "headless CLI should persist custom proxy port")
+        assert_true(cli.main(["use-model", "linux-smoke", "--codex"]) == 0, "headless use-model command should accept existing model")
+    finally:
+        if old_env_config is None:
+            os.environ.pop("CLAUDE_RESPONSES_PROXY_CONFIG", None)
+        else:
+            os.environ["CLAUDE_RESPONSES_PROXY_CONFIG"] = old_env_config
+
+
 def exercise_multi_tool_call_delta() -> None:
     kind, parsed = extract_text_delta(None, json.dumps({
         "choices": [{
@@ -885,6 +926,9 @@ def main() -> int:
         exercise_codex_responses_passthrough()
         exercise_codex_config_writer(tmpdir)
         exercise_backup_restore(tmpdir)
+        exercise_headless_cli_model_config(tmpdir)
+        app_cli = subprocess.run([sys.executable, "app.py", "status"], capture_output=True, text=True, timeout=10)
+        assert_true(app_cli.returncode == 0 and "Proxy URL:" in app_cli.stdout, "app.py should pass CLI arguments through without requiring a GUI")
         exercise_multi_tool_call_delta()
         exercise_cumulative_tool_call_delta()
         exercise_tool_argument_repair_and_thinking_filter()

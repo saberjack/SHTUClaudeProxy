@@ -1,5 +1,18 @@
 ﻿# Changelog
 
+## v4.2.7 - 2026-05-18
+
+Linux shell and headless CLI fix.
+
+### Added
+
+- Added headless CLI commands for model setup, model switching, background proxy start, stop, and status checks.
+
+### Fixed
+
+- Fixed Linux/macOS shell tool conversion so proxy-generated shell calls use `bash -lc` instead of Windows PowerShell.
+- Allowed packaged Linux binaries to run CLI commands without requiring a GUI display server.
+
 ## v4.2.6 - 2026-05-14
 
 Source package entry-point fix.

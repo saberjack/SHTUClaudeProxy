@@ -11,13 +11,18 @@ def has_display() -> bool:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        from cli import main
+
+        raise SystemExit(main(sys.argv[1:]))
+
     if not has_display():
         print("SHTUClaudeProxy GUI requires a display server.")
         print("Use X11 forwarding, for example: ssh -X user@host")
         print("Or use CLI mode, for example:")
-        print("  python cli.py show-config")
-        print("  python cli.py write-settings")
-        print("  python cli.py serve")
+        print("  SHTUCodeProxy status")
+        print("  SHTUCodeProxy configure-model --model-id MODEL --api-key KEY --upstream-model MODEL --default --codex")
+        print("  SHTUCodeProxy start")
         raise SystemExit(2)
 
     from pyqt_gui import run
