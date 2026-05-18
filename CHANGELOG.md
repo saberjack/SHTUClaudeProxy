@@ -1,5 +1,18 @@
 ﻿# Changelog
 
+## v4.2.13 - 2026-05-18
+
+Linux headless release packaging.
+
+### Added
+
+- Added a Linux headless CLI zip bundle containing the no-GUI executable, `headless-config.example.json`, and an editable `config.json` copy.
+- Updated release notes and README for the Linux no-GUI startup workflow.
+
+### Fixed
+
+- Confirmed Linux tool-call handling preserves `exec_command(cmd)` and Windows shell wrappers remain unchanged.
+
 ## v4.2.12 - 2026-05-18
 
 Cross-platform tool-call matrix coverage.

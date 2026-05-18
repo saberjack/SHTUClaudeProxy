@@ -9,6 +9,7 @@ OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH_NAME="$(uname -m)"
 APP_NAME="SHTUCodeProxy-v${VERSION}-${OS_NAME}-${ARCH_NAME}"
 CLI_NAME="shtucodeproxyctl-v${VERSION}-${OS_NAME}-${ARCH_NAME}"
+HEADLESS_BUNDLE="SHTUCodeProxy-v${VERSION}-${OS_NAME}-${ARCH_NAME}-headless-cli"
 FOLDER_NAME="SHTUCodeProxy"
 PACKAGE_ROOT="${APP_NAME}-python-launcher"
 
@@ -146,7 +147,29 @@ if [[ "$ONE_DIR_ONLY" != "1" ]]; then
     cli_app.py
 
   cp "dist/$CLI_NAME" "release/$CLI_NAME"
+  rm -rf "build/$HEADLESS_BUNDLE"
+  mkdir -p "build/$HEADLESS_BUNDLE"
+  cp "dist/$CLI_NAME" "build/$HEADLESS_BUNDLE/$CLI_NAME"
+  cp headless-config.example.json "build/$HEADLESS_BUNDLE/headless-config.example.json"
+  cp headless-config.example.json "build/$HEADLESS_BUNDLE/config.json"
+  cat > "build/$HEADLESS_BUNDLE/README-HEADLESS.txt" <<EOF
+SHTUCodeProxy v${VERSION} headless Linux CLI package
+
+Files:
+- $CLI_NAME: no-GUI Linux CLI executable
+- headless-config.example.json: full model template
+- config.json: editable config copy
+
+Quick start:
+1. chmod +x ./$CLI_NAME
+2. Edit config.json and replace PUT_YOUR_API_KEY_HERE.
+3. ./$CLI_NAME apply-config config.json --write-claude --write-codex --start
+4. ./$CLI_NAME status
+5. ./$CLI_NAME stop
+EOF
+  (cd build && zip -qr "../release/${HEADLESS_BUNDLE}.zip" "$HEADLESS_BUNDLE")
   echo "Headless CLI build complete: release/$CLI_NAME"
+  echo "Headless CLI bundle complete: release/${HEADLESS_BUNDLE}.zip"
 
   python3 -m PyInstaller \
     --noconfirm \
