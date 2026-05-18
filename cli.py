@@ -465,6 +465,10 @@ def load_config_file(path: Path) -> AppConfig:
         raise ValueError(f"default_model_id is not in models: {config.default_model_id}")
     if config.codex_model_id not in model_ids:
         raise ValueError(f"codex_model_id is not in models: {config.codex_model_id}")
+    invalid_env = {key: value for key, value in config.model_env.items() if value not in model_ids}
+    if invalid_env:
+        details = ", ".join(f"{key}={value}" for key, value in invalid_env.items())
+        raise ValueError(f"model_env contains unknown model id(s): {details}")
     return config
 
 

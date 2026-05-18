@@ -10,7 +10,7 @@ No testing has been done on whether it is effective with third-party APIs.
 
 > **Important:** GPT-series models should use the `responses` API Format. Chat-only models such as GLM, Qwen, or DeepSeek can use `chat_completions` when their upstream endpoint requires it.
 
-Current release: **v4.2.8**
+Current release: **v4.2.9**
 
 SHTUCodeProxy is a cross-platform local proxy and desktop configuration tool for connecting **Claude Code**, **Codex CLI**, **Codex Desktop**, and ordinary API clients to the ShanghaiTech University campus **GenAI API** or compatible model endpoints.
 
@@ -91,7 +91,7 @@ For normal conversational and many coding-assistance workflows, the proxy can be
 Use the recommended single-file release:
 
 ```text
-SHTUCodeProxy-v4.2.8-windows-x64.exe
+SHTUCodeProxy-v4.2.9-windows-x64.exe
 ```
 
 You do **not** need to install Python, pip, PyInstaller, or any Python packages. The single-file EXE bundles the Python runtime and required dependencies.
@@ -137,7 +137,7 @@ For Codex CLI/Desktop, install and sign in to Codex separately. SHTUCodeProxy on
 Recommended download for normal users:
 
 ```text
-SHTUCodeProxy-v4.2.8-windows-x64.exe
+SHTUCodeProxy-v4.2.9-windows-x64.exe
 ```
 
 Double-click it directly. No Python installation is required.
@@ -145,7 +145,7 @@ Double-click it directly. No Python installation is required.
 Alternative portable zip package:
 
 ```text
-SHTUCodeProxy-v4.2.8-windows-x64.zip
+SHTUCodeProxy-v4.2.9-windows-x64.zip
 ```
 
 If you use the zip package, extract the whole folder and run `SHTUCodeProxy.exe` inside it.
@@ -153,23 +153,23 @@ If you use the zip package, extract the whole folder and run `SHTUCodeProxy.exe`
 Linux desktop users can download either package:
 
 ```text
-SHTUCodeProxy-v4.2.8-linux-x86_64
-SHTUCodeProxy-v4.2.8-linux-x86_64-python-launcher.tar.xz
-shtucodeproxyctl-v4.2.8-linux-x86_64
+SHTUCodeProxy-v4.2.9-linux-x86_64
+SHTUCodeProxy-v4.2.9-linux-x86_64-python-launcher.tar.xz
+shtucodeproxyctl-v4.2.9-linux-x86_64
 ```
 
 For the single-file binary, make it executable and run it from a desktop session:
 
 ```bash
-chmod +x SHTUCodeProxy-v4.2.8-linux-x86_64
-./SHTUCodeProxy-v4.2.8-linux-x86_64
+chmod +x SHTUCodeProxy-v4.2.9-linux-x86_64
+./SHTUCodeProxy-v4.2.9-linux-x86_64
 ```
 
 For the python-launcher package, extract it and run:
 
 ```bash
-tar -xf SHTUCodeProxy-v4.2.8-linux-x86_64-python-launcher.tar.xz
-cd SHTUCodeProxy-v4.2.8-linux-x86_64-python-launcher
+tar -xf SHTUCodeProxy-v4.2.9-linux-x86_64-python-launcher.tar.xz
+cd SHTUCodeProxy-v4.2.9-linux-x86_64-python-launcher
 python3 run_shtucodeproxy.py
 ```
 
@@ -177,7 +177,7 @@ Linux notes:
 
 - A graphical desktop, X11 forwarding, or Wayland/XWayland session is required for the GUI.
 - Some Linux desktops may print Qt GLX warnings. If the window opens and works normally, they can usually be ignored.
-- On headless servers, use `shtucodeproxyctl-v4.2.8-linux-x86_64` or source CLI mode instead of the GUI.
+- On headless servers, use `shtucodeproxyctl-v4.2.9-linux-x86_64` or source CLI mode instead of the GUI.
 
 macOS users should run from source for now.
 
@@ -454,14 +454,14 @@ Or install PyInstaller automatically:
 Outputs:
 
 ```text
-release\SHTUCodeProxy-v4.2.8-windows-x64.exe
-release\SHTUCodeProxy-v4.2.8-windows-x64.zip
+release\SHTUCodeProxy-v4.2.9-windows-x64.exe
+release\SHTUCodeProxy-v4.2.9-windows-x64.zip
 dist\SHTUCodeProxy\SHTUCodeProxy.exe
 ```
 
-Use `release\SHTUCodeProxy-v4.2.8-windows-x64.exe` for normal Windows users. It is a single-file executable and does not require Python or the `_internal` folder.
+Use `release\SHTUCodeProxy-v4.2.9-windows-x64.exe` for normal Windows users. It is a single-file executable and does not require Python or the `_internal` folder.
 
-Use `release\SHTUCodeProxy-v4.2.8-windows-x64.zip` as the Windows portable folder package. If you distribute the zip package, users must extract the whole folder because the `_internal` runtime folder is required by the folder build.
+Use `release\SHTUCodeProxy-v4.2.9-windows-x64.zip` as the Windows portable folder package. If you distribute the zip package, users must extract the whole folder because the `_internal` runtime folder is required by the folder build.
 
 For Linux/macOS packaging from source, run:
 
@@ -478,15 +478,15 @@ Windows users should normally download the single-file EXE from the Release page
 ### Linux Release Binary
 
 ```bash
-chmod +x SHTUCodeProxy-v4.2.8-linux-x86_64
-./SHTUCodeProxy-v4.2.8-linux-x86_64
+chmod +x SHTUCodeProxy-v4.2.9-linux-x86_64
+./SHTUCodeProxy-v4.2.9-linux-x86_64
 ```
 
 ### Linux Python Launcher Package
 
 ```bash
-tar -xf SHTUCodeProxy-v4.2.8-linux-x86_64-python-launcher.tar.xz
-cd SHTUCodeProxy-v4.2.8-linux-x86_64-python-launcher
+tar -xf SHTUCodeProxy-v4.2.9-linux-x86_64-python-launcher.tar.xz
+cd SHTUCodeProxy-v4.2.9-linux-x86_64-python-launcher
 python3 run_shtucodeproxy.py
 ```
 
@@ -499,8 +499,8 @@ Linux notes:
 ### Source Package
 
 ```bash
-unzip SHTUCodeProxy-v4.2.8-source-linux-macos.zip
-cd SHTUCodeProxy-v4.2.8-source
+unzip SHTUCodeProxy-v4.2.9-source-linux-macos.zip
+cd SHTUCodeProxy-v4.2.9-source
 python3 -m pip install -r requirements-build.txt
 python3 smoke_test.py
 python3 app.py
@@ -511,14 +511,27 @@ python3 app.py
 For Linux servers without GUI or X11 forwarding, use CLI mode.
 
 ```bash
-chmod +x shtucodeproxyctl-v4.2.8-linux-x86_64
+chmod +x shtucodeproxyctl-v4.2.9-linux-x86_64
 cp headless-config.example.json config.json
 nano config.json
-./shtucodeproxyctl-v4.2.8-linux-x86_64 apply-config config.json --write-claude --write-codex --start
-./shtucodeproxyctl-v4.2.8-linux-x86_64 status
+./shtucodeproxyctl-v4.2.9-linux-x86_64 apply-config config.json --write-claude --write-codex --start
+./shtucodeproxyctl-v4.2.9-linux-x86_64 status
 ```
 
-The JSON file stores host, port, selected Claude/Codex model IDs, sandbox mode, and model routes. Set each model's `api_key`, `model_id`, `upstream_model`, `base_url`, and `api_format` before applying it.
+The JSON file stores host, port, selected Claude/Codex model IDs, sandbox mode, and model routes. The example includes `deepseek-pro`, `deepseek-chat`, `glm-chat`, `qwen-instruct`, and `GPT-5.5`; replace each `api_key` value you plan to use, then adjust the selected IDs.
+
+Model selection in `config.json` works like this:
+
+- `models`: defines all available routes. `model_id` is the local name clients request; `upstream_model` is the real provider model name; `api_format` is `responses` or `chat_completions`.
+- `default_model_id`: fallback route used by the proxy when a request does not match a configured model.
+- `codex_model_id`: the single model written into Codex `config.toml` as the root `model` and profile model.
+- `model_env.ANTHROPIC_MODEL`: Claude Code main model.
+- `model_env.ANTHROPIC_DEFAULT_HAIKU_MODEL`: Claude Code Haiku / fast model route.
+- `model_env.ANTHROPIC_DEFAULT_SONNET_MODEL`: Claude Code Sonnet / balanced model route.
+- `model_env.ANTHROPIC_DEFAULT_OPUS_MODEL`: Claude Code Opus / strongest model route.
+- `model_env.ANTHROPIC_REASONING_MODEL`: Claude Code reasoning model route.
+
+All model selection values must match one of the `model_id` values in `models`.
 
 Source package users can run the same flow with `python3 cli.py`:
 
@@ -660,6 +673,7 @@ Created by **sunyb**, ShanghaiTech University Library and Information Center.
 ## License
 
 MIT License. See `LICENSE`.
+
 
 
 

@@ -764,6 +764,19 @@ def exercise_headless_apply_config(tmpdir: Path) -> None:
             assert_true("Missing api_key" in str(exc), "apply-config should reject missing API keys loudly")
         else:
             raise AssertionError("apply-config accepted a model without api_key")
+        template = cli.load_config_file(Path("headless-config.example.json"))
+        template_ids = {model.model_id for model in template.models}
+        assert_true({"deepseek-pro", "deepseek-chat", "glm-chat", "qwen-instruct", "GPT-5.5"}.issubset(template_ids), "headless template should include the documented model routes")
+        invalid_route = tmpdir / "headless-config-invalid-route.json"
+        invalid_payload = json.loads(source.read_text(encoding="utf-8"))
+        invalid_payload["model_env"] = {key: "missing-model" for key in MODEL_ENV_KEYS}
+        invalid_route.write_text(json.dumps(invalid_payload), encoding="utf-8")
+        try:
+            cli.apply_config_file(invalid_route)
+        except ValueError as exc:
+            assert_true("model_env contains unknown model id" in str(exc), "apply-config should reject unknown Claude route IDs")
+        else:
+            raise AssertionError("apply-config accepted an unknown Claude route model")
     finally:
         if old_env_config is None:
             os.environ.pop("CLAUDE_RESPONSES_PROXY_CONFIG", None)

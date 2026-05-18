@@ -1,5 +1,18 @@
 ﻿# Changelog
 
+## v4.2.9 - 2026-05-18
+
+Expanded headless model template.
+
+### Changed
+
+- Expanded `headless-config.example.json` to show `deepseek-pro`, `deepseek-chat`, `glm-chat`, `qwen-instruct`, and `GPT-5.5` in one file.
+- Documented how Claude multi-route model variables and the Codex single selected model are chosen in headless mode.
+
+### Fixed
+
+- `apply-config` now rejects unknown Claude model route IDs before writing config.
+
 ## v4.2.8 - 2026-05-18
 
 Headless config-file workflow.
