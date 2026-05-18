@@ -90,6 +90,47 @@ def shell_join_command_parts(command_parts: List[str]) -> str:
     return shlex.join(command_parts)
 
 
+def command_text_from_arguments(arguments: Dict[str, Any]) -> str:
+    command = arguments.get("command")
+    if isinstance(command, str):
+        return command
+    if isinstance(command, list):
+        return shell_join_command_parts([str(part) for part in command if part is not None])
+    cmd = arguments.get("cmd")
+    if isinstance(cmd, str):
+        return cmd
+    fallback = arguments.get("arguments")
+    return fallback if isinstance(fallback, str) else ""
+
+
+def command_tool_schema(tool_name: str, tools: Optional[List[Dict[str, Any]]] = None) -> str:
+    for tool in tools or []:
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get("name")
+        if not name and isinstance(tool.get("function"), dict):
+            name = tool["function"].get("name")
+        if name == tool_name:
+            parameters = tool.get("parameters") or (tool.get("function", {}) or {}).get("parameters") or {}
+            properties = parameters.get("properties") if isinstance(parameters, dict) else {}
+            if isinstance(properties, dict) and "cmd" in properties and "command" not in properties:
+                return "cmd"
+    return "command"
+
+
+def adapt_tool_arguments_for_schema(tool_name: str, arguments: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    if command_tool_schema(tool_name, tools) != "cmd":
+        return arguments
+    command_text = command_text_from_arguments(arguments)
+    if command_text:
+        adapted = dict(arguments)
+        adapted.pop("command", None)
+        adapted.pop("arguments", None)
+        adapted["cmd"] = command_text
+        return adapted
+    return arguments
+
+
 def best_tool_name(requested_name: str, arguments: Dict[str, Any], tool_names: List[str], preferred_shell: Optional[str]) -> str:
     if requested_name in tool_names:
         return requested_name
@@ -105,6 +146,8 @@ def best_tool_name(requested_name: str, arguments: Dict[str, Any], tool_names: L
 
 def coerce_pseudo_arguments(tool_name: str, arguments: Dict[str, Any], preferred_shell: Optional[str]) -> Dict[str, Any]:
     if tool_name == preferred_shell:
+        if tool_name == "exec_command" and "cmd" in arguments:
+            return arguments
         if "command" not in arguments:
             path = str(arguments.get("path") or "").strip()
             text = str(arguments.get("text") or "").strip()
@@ -117,7 +160,11 @@ def coerce_pseudo_arguments(tool_name: str, arguments: Dict[str, Any], preferred
         command = arguments.get("command")
         if isinstance(command, str):
             arguments = dict(arguments)
-            arguments["command"] = shell_command_argv(command)
+            if tool_name == "exec_command":
+                arguments.pop("command", None)
+                arguments["cmd"] = command
+            else:
+                arguments["command"] = shell_command_argv(command)
     return arguments
 
 
@@ -134,12 +181,13 @@ def parse_pseudo_function_calls(text: str, tools: Optional[List[Dict[str, Any]]]
                 name = tool.get("name")
             if isinstance(name, str) and name:
                 tool_names.append(name)
-    preferred_shell = next((name for name in tool_names if name.lower() in ("shell", "bash", "exec", "run_command")), None)
+    preferred_shell = next((name for name in tool_names if name.lower() in ("shell", "bash", "exec", "run_command", "exec_command")), None)
     calls: List[Dict[str, Any]] = []
 
     def append_call(name: str, arguments: Dict[str, Any]) -> None:
         tool_name = best_tool_name(name, arguments, tool_names, preferred_shell)
         arguments = coerce_pseudo_arguments(tool_name, arguments, preferred_shell)
+        arguments = adapt_tool_arguments_for_schema(tool_name, arguments, tools)
         calls.append({
             "id": f"call_proxy_{now_ms()}_{len(calls)}",
             "index": len(calls),
@@ -756,7 +804,7 @@ def responses_request_to_chat_completions(body: Dict[str, Any], fallback_model: 
     if isinstance(instructions, str) and instructions.strip():
         messages.append({"role": "system", "content": instructions})
     if body.get("tools"):
-        messages.append({"role": "system", "content": "When tools are needed, call the provided tools through the native tool_calls API. Do not write XML, pseudo-code, <function>, <Invoke>, or markdown tool-call text. If a file path is requested and a shell tool is available, call the shell tool to read it instead of guessing."})
+        messages.append({"role": "system", "content": "When tools are needed, call the provided tools by their exact names through the native tool_calls API. Do not invent tool names such as shell unless that exact tool is provided. Do not write XML, pseudo-code, <function>, <Invoke>, or markdown tool-call text. If a file path is requested and a command execution tool is available, call that provided command tool to read it instead of guessing."})
 
     input_items = body.get("input")
     if isinstance(input_items, str):
@@ -997,7 +1045,7 @@ def codex_function_call_item(tool_call: Dict[str, Any], offset: int = 0) -> Dict
     name = str(tool_call.get("name") or "tool")
     arguments = parse_tool_arguments(tool_call.get("arguments", ""))
     normalized_name = name
-    if name.lower() in ("shell_exec", "exec_command", "execute_command", "bash"):
+    if name.lower() in ("shell_exec", "execute_command", "bash"):
         normalized_name = "shell"
     if normalized_name == "shell":
         command = arguments.get("command")

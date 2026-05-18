@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## v4.2.12 - 2026-05-18
+
+Cross-platform tool-call matrix coverage.
+
+### Fixed
+
+- Added regression coverage for explicit tool calls, implicit pseudo tool calls, multi-tool switching, multi-turn tool results, and Windows/Linux command wrappers.
+- Verified `exec_command(cmd)` is preserved while shell aliases still map to platform-specific command wrappers.
+
+## v4.2.11 - 2026-05-18
+
+Linux command tool schema fix.
+
+### Fixed
+
+- Preserved Codex `exec_command` tool calls and their `cmd` parameter instead of rewriting them to a non-existent `shell` tool.
+- Updated tool guidance to require exact provided tool names and avoid inventing `shell` when the client provides `exec_command`.
+
 ## v4.2.10 - 2026-05-18
 
 Headless background start reliability fix.

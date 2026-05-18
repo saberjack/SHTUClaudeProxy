@@ -137,6 +137,9 @@ def exercise_tool_call_translation() -> None:
         linux_shell_item = codex_function_call_item({"name": "shell_exec", "arguments": '{"command":"pwd"}'})
         linux_shell_args = json.loads(linux_shell_item["arguments"])
         assert_true(linux_shell_args["command"] == ["bash", "-lc", "pwd"], "Linux shell strings must not be wrapped with PowerShell")
+    exec_item = codex_function_call_item({"name": "exec_command", "arguments": '{"cmd":"echo test"}'})
+    exec_args = json.loads(exec_item["arguments"])
+    assert_true(exec_item["name"] == "exec_command" and exec_args["cmd"] == "echo test", "Codex exec_command tool name and cmd argument must be preserved")
 
 
 def exercise_chat_completion_json_to_responses() -> None:
@@ -198,6 +201,11 @@ def exercise_chat_completion_json_to_responses() -> None:
     assert_true("tool_results" not in cleaned, "pseudo tool results should be stripped")
     assert_true(invoke2_calls[0]["name"] == "shell", "tool_invoke pseudo tag should map bash to shell")
     assert_true(json.loads(invoke2_calls[0]["arguments"])["command"][-1] == "pwd", "tool_invoke pseudo command mismatch")
+
+    exec_tools = [{"type": "function", "name": "exec_command", "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}}}]
+    _, exec_calls = parse_pseudo_function_calls('<exec_command><command>pwd</command></exec_command>', exec_tools)
+    exec_call_args = json.loads(exec_calls[0]["arguments"])
+    assert_true(exec_calls[0]["name"] == "exec_command" and exec_call_args == {"cmd": "pwd"}, "pseudo exec_command should use the real exec_command(cmd) schema")
 
 
 def exercise_mixed_tool_result_ordering() -> None:
@@ -940,6 +948,52 @@ def exercise_tool_argument_repair_and_thinking_filter() -> None:
     )
 
 
+def exercise_cross_platform_tool_matrix() -> None:
+    exec_tools = [{"type": "function", "name": "exec_command", "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}}}]
+    payload = chat_completion_json_to_responses({
+        "choices": [{"message": {"tool_calls": [
+            {"id": "call_exec", "type": "function", "function": {"name": "exec_command", "arguments": '{"cmd":"pwd"}'}}
+        ]}}]
+    }, "glm-chat", 1, exec_tools)
+    output = payload["output"][0]
+    assert_true(output["name"] == "exec_command" and json.loads(output["arguments"])["cmd"] == "pwd", "explicit exec_command(cmd) calls should pass through unchanged")
+
+    pseudo_payload = chat_completion_json_to_responses({
+        "choices": [{"message": {"content": '<exec_command><command>pwd</command></exec_command>'}}]
+    }, "glm-chat", 1, exec_tools)
+    pseudo_output = pseudo_payload["output"][0]
+    assert_true(pseudo_output["name"] == "exec_command" and json.loads(pseudo_output["arguments"]) == {"cmd": "pwd"}, "implicit pseudo exec_command should adapt to cmd schema")
+
+    mixed_tools = [
+        {"type": "function", "name": "exec_command", "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}}},
+        {"type": "function", "name": "read_file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}},
+    ]
+    _, mixed_calls = parse_pseudo_function_calls('<read_file path="/tmp/a.txt" /><exec_command><command>cat /tmp/a.txt</command></exec_command>', mixed_tools)
+    assert_true([call["name"] for call in mixed_calls] == ["read_file", "exec_command"], "mixed implicit tools should preserve tool switching order")
+    assert_true(json.loads(mixed_calls[0]["arguments"]) == {"path": "/tmp/a.txt"}, "read_file implicit args should remain path-based")
+    assert_true(json.loads(mixed_calls[1]["arguments"]) == {"cmd": "cat /tmp/a.txt"}, "exec_command implicit args should use cmd")
+
+    multi_turn_chat = responses_request_to_chat_completions({
+        "model": "glm-chat",
+        "input": [
+            {"role": "user", "content": "list files"},
+            {"type": "function_call", "call_id": "call_exec", "name": "exec_command", "arguments": {"cmd": "ls"}},
+            {"type": "function_call_output", "call_id": "call_exec", "output": "README.md\n"},
+            {"role": "user", "content": "now read it"},
+        ],
+        "tools": mixed_tools,
+    }, "glm-chat")
+    assert_true(any(message.get("tool_calls", [{}])[0].get("function", {}).get("name") == "exec_command" for message in multi_turn_chat["messages"] if isinstance(message.get("tool_calls"), list)), "multi-turn conversion should keep exec_command tool name")
+    assert_true(any(message.get("role") == "tool" and message.get("tool_call_id") == "call_exec" for message in multi_turn_chat["messages"]), "multi-turn conversion should keep function_call_output as tool result")
+
+    with patch("proxy.os.name", "nt"):
+        windows_shell = codex_function_call_item({"name": "shell_exec", "arguments": '{"command":"Write-Output ok"}'})
+        assert_true(json.loads(windows_shell["arguments"])["command"][:2] == ["powershell.exe", "-Command"], "Windows shell aliases should use PowerShell")
+    with patch("proxy.os.name", "posix"):
+        linux_shell = codex_function_call_item({"name": "shell_exec", "arguments": '{"command":"echo ok"}'})
+        assert_true(json.loads(linux_shell["arguments"])["command"] == ["bash", "-lc", "echo ok"], "Linux shell aliases should use bash -lc")
+
+
 def main() -> int:
     tmpdir = Path.cwd() / ".smoke_tmp"
     if tmpdir.exists():
@@ -994,6 +1048,7 @@ def main() -> int:
         exercise_multi_tool_call_delta()
         exercise_cumulative_tool_call_delta()
         exercise_tool_argument_repair_and_thinking_filter()
+        exercise_cross_platform_tool_matrix()
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
