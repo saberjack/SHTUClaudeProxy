@@ -1242,10 +1242,16 @@ def exercise_multimodal_capability_config() -> None:
     }
     cleaned_chat_payload = sanitized_upstream_payload_for_model(stale_chat_payload, glm_model)
     assert_true("image_url" not in json.dumps(cleaned_chat_payload), "Final Chat payload sanitizer should remove stale image_url parts for image-disabled models")
+    image_only_payload = {"messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]}]}
+    cleaned_image_only = sanitized_upstream_payload_for_model(image_only_payload, glm_model)
+    assert_true(cleaned_image_only["messages"][0]["content"], "Final sanitizer should not leave empty chat content after removing unsupported image")
 
     stale_responses_payload = {"input": [{"role": "user", "content": [{"type": "input_text", "text": "old image"}, {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}]}]}
     cleaned_responses_payload = sanitized_upstream_payload_for_model(stale_responses_payload, glm_model)
     assert_true("input_image" not in json.dumps(cleaned_responses_payload), "Final Responses payload sanitizer should remove stale input_image parts for image-disabled models")
+    image_only_responses = {"input": [{"role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64,AAAA"}]}]}
+    cleaned_image_only_responses = sanitized_upstream_payload_for_model(image_only_responses, glm_model)
+    assert_true(cleaned_image_only_responses["input"][0]["content"], "Final sanitizer should not leave empty Responses content after removing unsupported image")
 
 
 def main() -> int:

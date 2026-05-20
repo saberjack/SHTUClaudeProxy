@@ -566,6 +566,7 @@ MODALITY_PART_TYPES = {
     "video": {"video", "input_video", "video_url"},
 }
 MULTIMODAL_PART_TYPES = set().union(*MODALITY_PART_TYPES.values())
+UNSUPPORTED_MODALITY_PLACEHOLDER = "[已移除当前模型不支持的图片/音频/视频输入]"
 
 
 def content_modalities(content: Any) -> set[str]:
@@ -601,10 +602,14 @@ def unsupported_modalities(model_config: ModelConfig, modalities: set[str]) -> s
 def sanitized_content_for_model(content: Any, model_config: ModelConfig) -> Any:
     if isinstance(content, list):
         sanitized: List[Any] = []
+        removed = False
         for part in content:
             if isinstance(part, dict) and unsupported_modalities(model_config, content_modalities(part)):
+                removed = True
                 continue
             sanitized.append(part)
+        if removed and not sanitized:
+            return UNSUPPORTED_MODALITY_PLACEHOLDER
         return sanitized
     if isinstance(content, dict) and unsupported_modalities(model_config, content_modalities(content)):
         return ""
@@ -654,15 +659,22 @@ def sanitized_responses_body_for_model(body: Dict[str, Any], model_config: Model
 def sanitized_upstream_value_for_model(value: Any, model_config: ModelConfig) -> Any:
     if isinstance(value, list):
         sanitized_items: List[Any] = []
+        removed = False
         for item in value:
             if isinstance(item, dict) and unsupported_modalities(model_config, content_modalities(item)):
+                removed = True
                 continue
             sanitized_items.append(sanitized_upstream_value_for_model(item, model_config))
+        if removed and not sanitized_items:
+            return [{"type": "text", "text": UNSUPPORTED_MODALITY_PLACEHOLDER}]
         return sanitized_items
     if isinstance(value, dict):
         if unsupported_modalities(model_config, content_modalities(value)):
             return ""
-        return {key: sanitized_upstream_value_for_model(item, model_config) for key, item in value.items()}
+        sanitized_dict = {key: sanitized_upstream_value_for_model(item, model_config) for key, item in value.items()}
+        if sanitized_dict.get("content") == []:
+            sanitized_dict["content"] = UNSUPPORTED_MODALITY_PLACEHOLDER
+        return sanitized_dict
     return value
 
 
