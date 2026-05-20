@@ -59,20 +59,20 @@ jobs:
         with:
           name: linux-release-assets
           path: |
-            release/SHTUCodeProxy-*-linux-*-python-launcher.tar.xz
-            release/SHTUCodeProxy-*-linux-*-headless-cli.zip
-            release/SHTUCodeProxy-*-linux-*
-            release/shtucodeproxyctl-*-linux-*
+            release/SHTUCodeProxy-${{ github.event.inputs.tag }}-linux-x86_64-python-launcher.tar.xz
+            release/SHTUCodeProxy-${{ github.event.inputs.tag }}-linux-x86_64-headless-cli.zip
+            release/SHTUCodeProxy-${{ github.event.inputs.tag }}-linux-x86_64
+            release/shtucodeproxyctl-${{ github.event.inputs.tag }}-linux-x86_64
 
       - name: Upload assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           files: |
-            release/SHTUCodeProxy-*-linux-*-python-launcher.tar.xz
-            release/SHTUCodeProxy-*-linux-*-headless-cli.zip
-            release/SHTUCodeProxy-*-linux-*
-            release/shtucodeproxyctl-*-linux-*
+            release/SHTUCodeProxy-${{ github.event.inputs.tag }}-linux-x86_64-python-launcher.tar.xz
+            release/SHTUCodeProxy-${{ github.event.inputs.tag }}-linux-x86_64-headless-cli.zip
+            release/SHTUCodeProxy-${{ github.event.inputs.tag }}-linux-x86_64
+            release/shtucodeproxyctl-${{ github.event.inputs.tag }}-linux-x86_64
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
